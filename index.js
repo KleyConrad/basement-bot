@@ -9,22 +9,27 @@ const {
 } = require('discord.js');
 
 const ID_SERVIDOR = '1546332841766420490';
-const NOME_CANAL = '📌・papo-serio';
+const NOME_CANAL = '💎・regras';
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildModeration,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
   ],
 });
 
-// Carrega o sistema de tempo em call
+// Mantém o sistema de tempo em call existente.
 const iniciarTempoCall = require('./tempo-call');
 iniciarTempoCall(client);
 
-// Evento de inicialização
+// Inicializa o sistema automático de logs.
+const iniciarLogs = require('./logs');
+iniciarLogs(client, ID_SERVIDOR);
+
 client.once('clientReady', () => {
   console.log(`BASEMENT online como ${client.user.tag}!`);
 });
@@ -41,11 +46,9 @@ client.on('interactionCreate', async (interaction) => {
     });
   }
 
-  if (
-    !interaction.memberPermissions?.has(
-      PermissionFlagsBits.Administrator
-    )
-  ) {
+  if (!interaction.memberPermissions?.has(
+    PermissionFlagsBits.Administrator
+  )) {
     return interaction.reply({
       content: 'Você precisa ser administrador para usar este comando.',
       ephemeral: true,
@@ -100,9 +103,12 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// Inicia a conexão com o Discord
+// Verifica se o token foi configurado.
 if (!process.env.DISCORD_TOKEN) {
-  throw new Error('DISCORD_TOKEN não foi configurado no arquivo .env.');
+  throw new Error(
+    'DISCORD_TOKEN não foi configurado no arquivo .env.'
+  );
 }
 
+// Inicia o bot.
 client.login(process.env.DISCORD_TOKEN);
