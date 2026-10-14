@@ -8,12 +8,20 @@ const {
   ButtonBuilder,
   ButtonStyle,
   PermissionFlagsBits,
+  MessageFlags,
 } = require('discord.js');
 
+const { ID_SERVIDOR, CALLS_TEMPO } = require('./config');
+
 const ARQUIVO_DADOS = path.join(__dirname, 'tempos.json');
-const ID_SERVIDOR = '1546332841766420490';
+const CALLS_PERMITIDAS = new Set(CALLS_TEMPO);
+const POR_PAGINA = 7;
 
 let tempos = {};
+let membrosCarregados = false;
+
+// id do membro -> momento em que a contagem atual começou.
+// Só existe sessão enquanto o membro está contando tempo.
 const sessoes = new Map();
 
 function carregarTempos() {
@@ -64,6 +72,36 @@ function registrarTempo(id, inicio) {
   tempos[id].totalMs += Math.max(0, Date.now() - inicio);
 }
 
+// Regra de contagem: o membro precisa estar em uma das calls
+// liberadas e sem estar mutado nem ensurdecido (por ele ou por um moderador).
+function deveContar(estado) {
+  if (!estado || !estado.channelId) return false;
+  if (!CALLS_PERMITIDAS.has(estado.channelId)) return false;
+  if (estado.mute || estado.deaf) return false;
+
+  return true;
+}
+
+// Compara o estado atual com a sessão e inicia/encerra a contagem.
+function atualizarSessao(estado) {
+  const id = estado.id;
+  const contando = sessoes.has(id);
+  const deve = deveContar(estado);
+
+  if (deve && !contando) {
+    garantirMembro(id);
+    sessoes.set(id, Date.now());
+    salvarTempos();
+    return;
+  }
+
+  if (!deve && contando) {
+    registrarTempo(id, sessoes.get(id));
+    sessoes.delete(id);
+    salvarTempos();
+  }
+}
+
 function formatarTempo(ms) {
   const minutosTotais = Math.floor(ms / 60000);
   const dias = Math.floor(minutosTotais / 1440);
@@ -76,8 +114,14 @@ function formatarTempo(ms) {
   return `${minutos}min`;
 }
 
-function obterRanking() {
+function obterRanking(guild) {
+  // Esconde quem já saiu do servidor (o tempo continua salvo no arquivo).
+  const filtrarSaidos = membrosCarregados && guild;
+
   return Object.entries(tempos)
+    .filter(
+      ([id]) => !filtrarSaidos || guild.members.cache.has(id)
+    )
     .map(([id, dados]) => {
       const inicio = sessoes.get(id);
 
@@ -95,15 +139,15 @@ function obterRanking() {
     .sort((a, b) => b.totalMs - a.totalMs);
 }
 
-function criarEmbed(ranking, pagina) {
-  const porPagina = 7;
-  const totalPaginas = Math.max(
-    1,
-    Math.ceil(ranking.length / porPagina)
-  );
+function totalPaginasDe(ranking) {
+  return Math.max(1, Math.ceil(ranking.length / POR_PAGINA));
+}
 
-  const inicio = pagina * porPagina;
-  const membros = ranking.slice(inicio, inicio + porPagina);
+function criarEmbed(ranking, pagina) {
+  const totalPaginas = totalPaginasDe(ranking);
+
+  const inicio = pagina * POR_PAGINA;
+  const membros = ranking.slice(inicio, inicio + POR_PAGINA);
 
   const descricao = membros.length
     ? membros
@@ -143,11 +187,34 @@ function criarBotoes(pagina, totalPaginas) {
   );
 }
 
+function montarPrimeiraPagina(guild) {
+  const ranking = obterRanking(guild);
+
+  return {
+    embeds: [criarEmbed(ranking, 0)],
+    components: [criarBotoes(0, totalPaginasDe(ranking))],
+  };
+}
+
+function resetarRanking() {
+  for (const id of Object.keys(tempos)) {
+    tempos[id].totalMs = 0;
+  }
+
+  const agora = Date.now();
+
+  for (const id of sessoes.keys()) {
+    sessoes.set(id, agora);
+  }
+
+  salvarTempos();
+}
+
 module.exports = function iniciarTempoCall(client) {
   carregarTempos();
 
-  // Identifica quem já está em call quando o bot inicia.
-  client.once('clientReady', () => {
+  // Identifica quem já está em call (liberada e sem mute) quando o bot inicia.
+  client.once('clientReady', async () => {
     const guild = client.guilds.cache.get(ID_SERVIDOR);
 
     if (!guild) {
@@ -155,19 +222,27 @@ module.exports = function iniciarTempoCall(client) {
       return;
     }
 
+    // Carrega todos os membros para o ranking poder esconder quem saiu.
+    try {
+      await guild.members.fetch();
+      membrosCarregados = true;
+    } catch (error) {
+      console.error(
+        'Não consegui carregar a lista de membros:',
+        error.message
+      );
+    }
+
     const agora = Date.now();
     let quantidade = 0;
 
     for (const estado of guild.voiceStates.cache.values()) {
-      if (!estado.channelId) continue;
-
-      const membro =
-        estado.member || guild.members.cache.get(estado.id);
-
       const usuario =
-        membro?.user || client.users.cache.get(estado.id);
+        estado.member?.user || client.users.cache.get(estado.id);
 
       if (usuario?.bot) continue;
+      if (!deveContar(estado)) continue;
+      if (sessoes.has(estado.id)) continue;
 
       garantirMembro(estado.id);
       sessoes.set(estado.id, agora);
@@ -177,65 +252,44 @@ module.exports = function iniciarTempoCall(client) {
     salvarTempos();
 
     console.log(
-      `BASEMENT: ${quantidade} pessoa(s) em call identificada(s).`
+      `BASEMENT: ${quantidade} pessoa(s) contando tempo em call.`
     );
   });
 
-  // Registra entradas, saídas e mudanças de canal.
+  // Entrada, saída, troca de canal, mute/desmute e ensurdecer.
   client.on('voiceStateUpdate', (anterior, atual) => {
     if (atual.guild.id !== ID_SERVIDOR) return;
 
-    const membro =
-      atual.member || atual.guild.members.cache.get(atual.id);
-
     const usuario =
-      membro?.user || client.users.cache.get(atual.id);
+      atual.member?.user ||
+      client.users.cache.get(atual.id);
 
     if (usuario?.bot) return;
 
-    const id = atual.id;
-
-    // Entrou em uma call.
-    if (!anterior.channelId && atual.channelId) {
-      garantirMembro(id);
-
-      if (!sessoes.has(id)) {
-        sessoes.set(id, Date.now());
-      }
-
-      salvarTempos();
-      return;
-    }
-
-    // Saiu de uma call.
-    if (anterior.channelId && !atual.channelId) {
-      const inicio = sessoes.get(id);
-
-      if (inicio !== undefined) {
-        registrarTempo(id, inicio);
-        sessoes.delete(id);
-        salvarTempos();
-      }
-
-      return;
-    }
-
-    // Trocar de canal não interrompe a sessão.
+    atualizarSessao(atual);
   });
 
-  // Salva o tempo acumulado a cada minuto.
+  // A cada minuto: salva o tempo acumulado e confere se ainda deve contar.
   const intervaloSalvamento = setInterval(() => {
+    const guild = client.guilds.cache.get(ID_SERVIDOR);
     const agora = Date.now();
 
     for (const [id, inicio] of sessoes.entries()) {
       registrarTempo(id, inicio);
-      sessoes.set(id, agora);
+
+      const estado = guild?.voiceStates.cache.get(id);
+
+      if (guild && !deveContar(estado)) {
+        sessoes.delete(id);
+      } else {
+        sessoes.set(id, agora);
+      }
     }
 
     salvarTempos();
   }, 60_000);
 
-  // Comandos !tempo e !resettempo.
+  // Comandos de texto !tempo e !resettempo (mantidos).
   client.on('messageCreate', async (message) => {
     if (message.author.bot || message.guildId !== ID_SERVIDOR) {
       return;
@@ -244,18 +298,7 @@ module.exports = function iniciarTempoCall(client) {
     const comando = message.content.trim();
 
     if (comando === '!tempo') {
-      const ranking = obterRanking();
-
-      await message.reply({
-        embeds: [criarEmbed(ranking, 0)],
-        components: [
-          criarBotoes(
-            0,
-            Math.max(1, Math.ceil(ranking.length / 7))
-          ),
-        ],
-      });
-
+      await message.reply(montarPrimeiraPagina(message.guild));
       return;
     }
 
@@ -271,17 +314,7 @@ module.exports = function iniciarTempoCall(client) {
         return;
       }
 
-      for (const id of Object.keys(tempos)) {
-        tempos[id].totalMs = 0;
-      }
-
-      const agora = Date.now();
-
-      for (const id of sessoes.keys()) {
-        sessoes.set(id, agora);
-      }
-
-      salvarTempos();
+      resetarRanking();
 
       await message.reply(
         'O ranking de tempo em call foi resetado!'
@@ -289,14 +322,43 @@ module.exports = function iniciarTempoCall(client) {
     }
   });
 
-  // Botões de paginação.
+  // Slash commands /tempo e /resettempo + botões de paginação.
   client.on('interactionCreate', async (interaction) => {
-    if (
-      !interaction.isButton() ||
-      interaction.guildId !== ID_SERVIDOR
-    ) {
+    if (interaction.guildId !== ID_SERVIDOR) return;
+
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === 'tempo') {
+        await interaction.reply(
+          montarPrimeiraPagina(interaction.guild)
+        );
+        return;
+      }
+
+      if (interaction.commandName === 'resettempo') {
+        if (
+          !interaction.memberPermissions?.has(
+            PermissionFlagsBits.Administrator
+          )
+        ) {
+          await interaction.reply({
+            content:
+              'Você precisa ser administrador para resetar o ranking.',
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        resetarRanking();
+
+        await interaction.reply(
+          'O ranking de tempo em call foi resetado!'
+        );
+      }
+
       return;
     }
+
+    if (!interaction.isButton()) return;
 
     const match = interaction.customId.match(
       /^tempo_(anterior|proximo)_(\d+)$/
@@ -311,11 +373,8 @@ module.exports = function iniciarTempoCall(client) {
         ? paginaAtual + 1
         : paginaAtual - 1;
 
-    const ranking = obterRanking();
-    const totalPaginas = Math.max(
-      1,
-      Math.ceil(ranking.length / 7)
-    );
+    const ranking = obterRanking(interaction.guild);
+    const totalPaginas = totalPaginasDe(ranking);
 
     const pagina = Math.max(
       0,
@@ -330,13 +389,11 @@ module.exports = function iniciarTempoCall(client) {
 
   // Salva os tempos ao encerrar o bot.
   function encerrar() {
-    const agora = Date.now();
-
     for (const [id, inicio] of sessoes.entries()) {
       registrarTempo(id, inicio);
-      sessoes.set(id, agora);
     }
 
+    sessoes.clear();
     salvarTempos();
     clearInterval(intervaloSalvamento);
     client.destroy();

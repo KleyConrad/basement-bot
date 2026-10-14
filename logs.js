@@ -6,19 +6,19 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
-const CATEGORIA_LOGS = '📋・LOGS BASEMENT';
+const CATEGORIA_LOGS = 'LOGS-BASEMENT';
 
 const CANAIS_LOGS = {
-  entradas: 'entradas',
-  saidas: 'saidas',
-  banimentos: 'banimentos',
-  expulsoes: 'expulsoes',
-  mensagensApagadas: 'mensagens-apagadas',
-  mensagensEditadas: 'mensagens-editadas',
-  voz: 'logs-voz',
-  cargos: 'logs-cargos',
-  canais: 'logs-canais',
-  servidor: 'logs-servidor',
+  entradas: 'log-enter',
+  saidas: 'log-exit',
+  banimentos: 'log-ban',
+  expulsoes: 'log-expulsoes',
+  mensagensApagadas: 'log-chat-delete',
+  mensagensEditadas: 'log-chat-edit',
+  voz: 'log-voice',
+  cargos: 'log-cargos',
+  canais: 'log-canais',
+  servidor: 'log-servidor',
 };
 
 module.exports = function iniciarLogs(client, idServidor) {
@@ -108,6 +108,62 @@ module.exports = function iniciarLogs(client, idServidor) {
         motivo: entrada.reason || 'Motivo não informado',
         entrada,
       };
+    } catch {
+      return null;
+    }
+  }
+
+  // O audit log de movimentação/desconexão não informa QUEM foi movido,
+  // só quem moveu, para qual canal e quantas vezes (count). Por isso
+  // guardamos quanto de cada entrada já foi atribuído a um evento.
+  const contagemAuditoria = new Map();
+
+  async function buscarAutorAcaoVoz(
+    guild,
+    tipo,
+    canalDestinoId = null
+  ) {
+    // O registro de auditoria demora um instante para aparecer.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    try {
+      const logs = await guild.fetchAuditLogs({
+        type: tipo,
+        limit: 6,
+      });
+
+      const agora = Date.now();
+
+      for (const entrada of logs.entries.values()) {
+        if (
+          canalDestinoId &&
+          entrada.extra?.channel?.id !== canalDestinoId
+        ) continue;
+
+        const total = Number(entrada.extra?.count) || 1;
+        const jaContado = contagemAuditoria.get(entrada.id) || 0;
+        const recente =
+          agora - entrada.createdTimestamp <= 20000;
+
+        // Entrada nova precisa ser recente; entrada já vista só vale
+        // se o contador aumentou (nova ação do mesmo moderador).
+        const nova =
+          jaContado === 0 ? recente : total > jaContado;
+
+        if (!nova) continue;
+
+        contagemAuditoria.set(entrada.id, total);
+
+        if (contagemAuditoria.size > 200) {
+          contagemAuditoria.delete(
+            contagemAuditoria.keys().next().value
+          );
+        }
+
+        return { usuario: entrada.executor, entrada };
+      }
+
+      return null;
     } catch {
       return null;
     }
@@ -461,17 +517,14 @@ module.exports = function iniciarLogs(client, idServidor) {
       depois.author?.bot
     ) return;
 
-    if (antes.partial || depois.partial) {
-      const [antesCompleto, depoisCompleto] =
-        await Promise.all([
-          antes.fetch().catch(() => null),
-          depois.fetch().catch(() => null),
-        ]);
+    // Sem o conteúdo anterior não dá para saber o que mudou
+    // (e evita logar atualizações automáticas, como prévias de link).
+    if (antes.partial) return;
 
-      if (!antesCompleto || !depoisCompleto) return;
+    if (depois.partial) {
+      depois = await depois.fetch().catch(() => null);
 
-      antes = antesCompleto;
-      depois = depoisCompleto;
+      if (!depois || depois.author?.bot) return;
     }
 
     if (antes.content === depois.content) return;
@@ -527,50 +580,75 @@ module.exports = function iniciarLogs(client, idServidor) {
 
     let titulo;
     let descricao;
+    let cor = '#5865F2';
     let responsavel = null;
+    let rotuloResponsavel = 'Ação realizada por';
 
     if (!antes.channelId && depois.channelId) {
       titulo = '🔊 Entrou em call';
       descricao = `${membro} entrou em **${depois.channel?.name || 'canal de voz'}**.`;
     } else if (antes.channelId && !depois.channelId) {
-      titulo = '🔇 Saiu da call';
-      descricao = `${membro} saiu de **${antes.channel?.name || 'canal de voz'}**.`;
+      const nomeCanal = antes.channel?.name || 'canal de voz';
 
-      responsavel = await buscarResponsavel(
+      responsavel = await buscarAutorAcaoVoz(
         guild,
-        AuditLogEvent.MemberDisconnect,
-        membro.id,
-        10000
+        AuditLogEvent.MemberDisconnect
       );
+
+      if (responsavel?.usuario) {
+        titulo = '🔌 Membro desconectado da call';
+        cor = '#ED4245';
+        rotuloResponsavel = 'Quem desconectou';
+        descricao = `${responsavel.usuario} desconectou ${membro} de **${nomeCanal}**.`;
+      } else {
+        titulo = '🔇 Saiu da call';
+        descricao = `${membro} saiu de **${nomeCanal}**.`;
+      }
     } else if (
       antes.channelId &&
       depois.channelId &&
       antes.channelId !== depois.channelId
     ) {
-      titulo = '🔁 Mudou de call';
-      descricao = `${membro} mudou de **${antes.channel?.name || 'canal anterior'}** para **${depois.channel?.name || 'canal novo'}**.`;
+      const nomeAntes = antes.channel?.name || 'canal anterior';
+      const nomeDepois = depois.channel?.name || 'canal novo';
 
-      responsavel = await buscarResponsavel(
+      responsavel = await buscarAutorAcaoVoz(
         guild,
         AuditLogEvent.MemberMove,
-        membro.id,
-        10000
+        depois.channelId
       );
+
+      if (responsavel?.usuario) {
+        titulo = '🔀 Membro movido por outro usuário';
+        cor = '#FEE75C';
+        rotuloResponsavel = 'Quem moveu';
+        descricao = `${responsavel.usuario} moveu ${membro} de **${nomeAntes}** para **${nomeDepois}**.`;
+      } else {
+        titulo = '🔁 Mudou de call';
+        descricao = `${membro} mudou de **${nomeAntes}** para **${nomeDepois}**.`;
+      }
     } else {
       return;
     }
 
     const embed = embedBase(
       titulo,
-      '#5865F2'
+      cor
     ).setDescription(descricao);
 
     if (responsavel?.usuario) {
-      embed.addFields({
-        name: 'Ação realizada por',
-        value: `${responsavel.usuario}`,
-        inline: true,
-      });
+      embed.addFields(
+        {
+          name: rotuloResponsavel,
+          value: `${responsavel.usuario}\nID: ${responsavel.usuario.id}`,
+          inline: true,
+        },
+        {
+          name: 'Membro afetado',
+          value: `${membro}\nID: ${membro.id}`,
+          inline: true,
+        }
+      );
     }
 
     await enviar(guild, 'voz', embed);
@@ -806,6 +884,9 @@ module.exports = function iniciarLogs(client, idServidor) {
   // APELIDOS E CARGOS DE MEMBROS
   client.on('guildMemberUpdate', async (antes, depois) => {
     if (depois.guild.id !== idServidor) return;
+
+    // Membro parcial não traz cargos/apelido anteriores confiáveis.
+    if (antes.partial) return;
 
     if (antes.nickname !== depois.nickname) {
       const responsavel = await buscarResponsavel(

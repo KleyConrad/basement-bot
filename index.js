@@ -4,12 +4,13 @@ require('dotenv').config();
 const {
   Client,
   GatewayIntentBits,
+  Partials,
   EmbedBuilder,
   PermissionFlagsBits,
+  MessageFlags,
 } = require('discord.js');
 
-const ID_SERVIDOR = '1546332841766420490';
-const NOME_CANAL = '💎・regras';
+const { ID_SERVIDOR, NOME_CANAL_REGRAS } = require('./config');
 
 const client = new Client({
   intents: [
@@ -20,13 +21,19 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
   ],
+  // Permite receber eventos de mensagens/membros que não estavam no cache.
+  partials: [
+    Partials.Message,
+    Partials.Channel,
+    Partials.GuildMember,
+  ],
 });
 
-// Mantém o sistema de tempo em call existente.
+// Sistema de tempo em call.
 const iniciarTempoCall = require('./tempo-call');
 iniciarTempoCall(client);
 
-// Inicializa o sistema automático de logs.
+// Sistema automático de logs.
 const iniciarLogs = require('./logs');
 iniciarLogs(client, ID_SERVIDOR);
 
@@ -42,7 +49,7 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.guildId !== ID_SERVIDOR) {
     return interaction.reply({
       content: 'Este comando só pode ser usado no Basement.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -51,22 +58,22 @@ client.on('interactionCreate', async (interaction) => {
   )) {
     return interaction.reply({
       content: 'Você precisa ser administrador para usar este comando.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   try {
     const canais = await interaction.guild.channels.fetch();
 
     const canal = canais.find(
-      (c) => c && c.name === NOME_CANAL && c.isTextBased()
+      (c) => c && c.name === NOME_CANAL_REGRAS && c.isTextBased()
     );
 
     if (!canal) {
       return interaction.editReply(
-        `Não encontrei o canal "${NOME_CANAL}". Confira o nome dele.`
+        `Não encontrei o canal "${NOME_CANAL_REGRAS}". Confira o nome dele.`
       );
     }
 

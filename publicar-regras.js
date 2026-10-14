@@ -8,13 +8,25 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
-const ID_APLICACAO = '1559366996112441354';
-const ID_SERVIDOR = '1546332841766420490';
+const { ID_APLICACAO, ID_SERVIDOR } = require('./config');
 
 const comandos = [
   new SlashCommandBuilder()
     .setName('publicar-regras')
     .setDescription('Publica as regras oficiais do Basement')
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.Administrator
+    )
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('tempo')
+    .setDescription('Mostra o ranking de tempo em call do Basement')
+    .toJSON(),
+
+  new SlashCommandBuilder()
+    .setName('resettempo')
+    .setDescription('Zera o ranking de tempo em call')
     .setDefaultMemberPermissions(
       PermissionFlagsBits.Administrator
     )
@@ -41,7 +53,7 @@ async function registrarComandos() {
     );
 
     console.log(
-      'Comando /publicar-regras registrado com sucesso!'
+      'Comandos registrados com sucesso: /publicar-regras, /tempo e /resettempo!'
     );
   } catch (error) {
     console.error('Erro ao registrar comandos:', error);
