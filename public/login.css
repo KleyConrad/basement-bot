@@ -1,0 +1,51 @@
+[hidden] {
+  display: none !important;
+}
+
+.login {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 24px;
+}
+
+.login h1 {
+  font-size: 2rem;
+  font-weight: 400;
+  letter-spacing: 0.3em;
+}
+
+.login-sub {
+  color: var(--suave);
+}
+
+.login-aviso {
+  color: var(--vermelho);
+  font-size: 0.9rem;
+}
+
+.login-botao {
+  margin-top: 18px;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.conta {
+  color: var(--texto);
+  margin-left: 6px;
+}
+
+.sair {
+  color: var(--suave);
+  font-size: 0.8rem;
+  text-decoration: none;
+  margin-left: 4px;
+}
+
+.sair:hover {
+  color: var(--vermelho);
+}

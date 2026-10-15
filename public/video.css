@@ -1,0 +1,62 @@
+/* O palco agora é uma grade: cada transmissão ocupa um quadro. */
+.palco {
+  position: relative;
+  overflow: hidden;
+  padding: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.palco-texto {
+  grid-column: 1 / -1;
+  place-self: center;
+  text-align: center;
+  padding: 20px;
+}
+
+.tile {
+  position: relative;
+  min-height: 0;
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.tile video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.tile.camera video {
+  object-fit: cover;
+}
+
+/* Sua própria câmera aparece espelhada. */
+.tile.local.camera video {
+  transform: scaleX(-1);
+}
+
+.rotulo {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  font-size: 0.75rem;
+  background: rgba(0, 0, 0, 0.65);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.erro {
+  color: var(--vermelho);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 800px) {
+  .palco {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}

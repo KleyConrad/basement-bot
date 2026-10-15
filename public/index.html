@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Basement — Sala de transmissão</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Tela de login -->
+  <main class="login login-novo" id="telaLogin" hidden>
+    <div class="login-card">
+      <div class="login-marca">BASEMENT</div>
+      <p class="login-eyebrow">SUA SALA, EM SINCRONIA</p>
+      <h1>Compartilhe,<br><span>Fique junto.</span></h1>
+      <p class="login-sub">Entre com o Discord e acompanhe a câmera e a tela da sua call.</p>
+      <div class="login-beneficios">
+        <div><span class="beneficio-icone" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM20 8v6M17 11h6"/></svg></span><span><strong>Conectado ao Discord</strong><small>Use sua conta e sua call atual</small></span></div>
+        <div><span class="beneficio-icone" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="13" height="10" rx="2"/><path d="m16 10 5-3v10l-5-3"/></svg></span><span><strong>Câmera e tela ao vivo</strong><small>Veja o que a galera compartilha</small></span></div>
+        <div><span class="beneficio-icone" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></svg></span><span><strong>Acesso controlado</strong><small>Disponível para participantes autorizados</small></span></div>
+      </div>
+      <p class="login-aviso" id="loginAviso" hidden></p>
+      <a class="btn ativo login-botao" href="/login"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8 8.5a8 8 0 0 1 8 0M6 6.5a12 12 0 0 1 12 0M9 16l-1 2c-2-.5-3.5-1.5-4.5-3.5L2.5 9C4 7.5 5.5 6.5 7 6l1 2m8 8 1 2c2-.5 3.5-1.5 4.5-3.5L21.5 9C20 7.5 18.5 6.5 17 6l-1 2M9 13h.01M15 13h.01"/></svg> Continuar com Discord</a>
+      <p class="login-rodape">Basement · sua comunidade, em sincronia.</p>
+    </div>
+  </main>
+
+  <!-- Tela quando a pessoa não está numa call -->
+  <main class="login login-novo" id="telaSemCall" hidden>
+    <div class="login-card login-card-aviso">
+      <div class="login-marca">Basement</div>
+      <p class="login-eyebrow">ACESSO À SALA</p>
+      <h1>Quase lá.</h1>
+      <p class="login-sub" id="semCallMsg"></p>
+      <button class="btn ativo login-botao" id="btnRecarregar">Verificar novamente</button>
+      <p class="login-rodape">Entre em um canal de voz no Discord para continuar.</p>
+    </div>
+  </main>
+
+  <!-- Tela principal (só aparece logado e numa call) -->
+  <div class="app" id="telaApp" hidden>
+
+    <header class="topo">
+      <div class="marca" aria-label="Basement">
+        <div class="logo">BASEMENT</div>
+      </div>
+
+      <div class="canal">
+        <span class="canal-rotulo">Canal de voz</span>
+        <span class="canal-nome" id="canalNome"></span>
+      </div>
+
+      <div class="conexao">
+        <span class="ponto" id="ponto"></span>
+        <span id="status">Conectando...</span>
+        <span class="conta" aria-label="Conta conectada">
+          <span class="conta-ponto" aria-hidden="true"></span>
+          <span class="conta-nome" id="usuarioNome">Usuário</span>
+        </span>
+        <a class="sair" href="/logout">Sair</a>
+      </div>
+    </header>
+
+    <div class="corpo">
+
+      <section class="principal">
+        <!-- As transmissões aparecem aqui dentro, cada uma num quadro. -->
+        <div class="palco" id="palco">
+          <div class="palco-texto" id="palcoTexto">
+            <p id="palcoTitulo">Conectando à sala...</p>
+            <span id="palcoSub"></span>
+          </div>
+        </div>
+
+        <div class="transmissao">
+          <span>Transmitindo agora</span> <strong id="transmissor">ninguém</strong>
+          <span class="modo-espectador" id="avisoEspectador" hidden>Modo espectador: mídia desativada</span>
+        </div>
+
+        <div class="perfil-transmissao">
+          <label for="perfilTela">Qualidade da transmissão</label>
+          <select id="perfilTela" class="seletor-perfil">
+            <option value="fluido">Fluido · 720p / 30 FPS</option>
+            <option value="equilibrado" selected>Equilibrado · 1080p / 30 FPS</option>
+            <option value="qualidade">Alta qualidade · 1080p / até 60 FPS</option>
+          </select>
+          <small>Escolha antes de compartilhar a tela. A qualidade depende também da internet e do computador.</small>
+        </div>
+
+        <div class="controles">
+          <button class="btn" id="btnCamera">Ligar câmera</button>
+          <button class="btn" id="btnTela">Compartilhar tela</button>
+          <button class="btn" id="btnParar">Encerrar compartilhamento</button>
+          <button class="btn perigo" id="btnSala">Sair da sala</button>
+        </div>
+
+        <p class="erro" id="erro" hidden></p>
+      </section>
+
+      <aside class="lateral">
+        <div class="lateral-cabecalho">
+          <h2>Na sala</h2>
+          <span class="lista-contagem" id="listaContagem">0 pessoas</span>
+        </div>
+        <p class="lateral-ajuda">Quem está conectado à sala agora.</p>
+        <ul id="lista" aria-label="Membros conectados à sala"></ul>
+      </aside>
+
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/vendor/livekit-client.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

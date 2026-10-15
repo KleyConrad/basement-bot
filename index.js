@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 
 const {
@@ -36,6 +35,14 @@ iniciarTempoCall(client);
 // Sistema automático de logs.
 const iniciarLogs = require('./logs');
 iniciarLogs(client, ID_SERVIDOR);
+
+// Comando !transmitir.
+const iniciarTransmissao = require('./transmissao');
+iniciarTransmissao(client);
+
+// Site Basement Screen Share.
+const iniciarWeb = require('./web');
+iniciarWeb(client);
 
 client.once('clientReady', () => {
   console.log(`BASEMENT online como ${client.user.tag}!`);
