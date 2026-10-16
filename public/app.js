@@ -24,6 +24,11 @@ const el = {
   btnParar: $('btnParar'),
   btnSala: $('btnSala'),
   perfilTela: $('perfilTela'),
+  saidaAudio: $('saidaAudio'),
+  btnAtualizarSaidas: $('btnAtualizarSaidas'),
+  btnMudo: $('btnMudo'),
+  volumeGeral: $('volumeGeral'),
+  volumeGeralTexto: $('volumeGeralTexto'),
 };
 
 const estado = {
@@ -32,6 +37,9 @@ const estado = {
   midia: 'offline',      // sala de vídeo: offline | conectando | online | erro
   ocupado: false,        // true enquanto o navegador pede permissão
   espectador: false,     // mantém a lista, mas não recebe nem publica vídeo
+  volumeGeral: 1,        // 0 a 1, vale para todas as transmissões
+  mudo: false,           // silencia todas as transmissões
+  saidaAudio: lerSaidaSalva(), // id do dispositivo de saída ('' = padrão)
 };
 
 const tilesOcultos = new Set();
@@ -41,6 +49,224 @@ const LK = typeof LivekitClient !== 'undefined' ? LivekitClient : null;
 
 let sala = null;          // a sala de vídeo atual
 const tiles = new Map();  // quadros de vídeo na tela
+
+// ---------- Áudio das transmissões ----------
+// O som da tela compartilhada chega como uma faixa de áudio separada.
+// Cada faixa tem um <audio> escondido; é ele que toca no seu dispositivo.
+const audios = new Map(); // 'idDaPessoa:fonte' -> { track, elemento }
+const volumesIndividuais = new Map(); // idDaPessoa -> 0 a 1 (só para você)
+const contAudios = document.createElement('div');
+contAudios.style.display = 'none';
+document.body.appendChild(contAudios);
+
+const saidaSuportada =
+  typeof HTMLMediaElement !== 'undefined' &&
+  'setSinkId' in HTMLMediaElement.prototype;
+
+// ---------- Diagnóstico: mostra na tela o que está acontecendo com o som ----------
+const statusAudio = document.createElement('p');
+statusAudio.id = 'statusAudio';
+statusAudio.style.cssText = 'margin:6px 0 0;font-size:.82rem;color:#8dbaff;';
+el.erro.insertAdjacentElement('afterend', statusAudio);
+
+function dizerAudio(texto) {
+  console.log('[áudio]', texto);
+  statusAudio.textContent = texto ? 'Som: ' + texto : '';
+}
+
+let ctxNivel = null;
+const medidores = new Map(); // chave -> { id, fonte }
+
+function iniciarMedidor(chave, nome, track) {
+  try {
+    ctxNivel = ctxNivel || new (window.AudioContext || window.webkitAudioContext)();
+    ctxNivel.resume().catch(() => {});
+
+    const fonte = ctxNivel.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
+    const analisador = ctxNivel.createAnalyser();
+    analisador.fftSize = 512;
+    fonte.connect(analisador); // só mede; não manda para a caixa de som
+
+    const dados = new Uint8Array(analisador.fftSize);
+    const id = setInterval(() => {
+      analisador.getByteTimeDomainData(dados);
+      let pico = 0;
+      for (const v of dados) pico = Math.max(pico, Math.abs(v - 128));
+      const nivel = Math.round((pico / 128) * 100);
+      statusAudio.textContent =
+        `Som: recebendo de ${nome} · nível ${nivel}%` +
+        (nivel === 0 ? ' (chegando em silêncio: nada está tocando no que foi compartilhado)' : '');
+    }, 700);
+
+    medidores.set(chave, { id, fonte });
+  } catch (erro) {
+    console.warn('[áudio] medidor falhou:', erro);
+  }
+}
+
+function pararMedidor(chave) {
+  const m = medidores.get(chave);
+  if (!m) return;
+  clearInterval(m.id);
+  try { m.fonte.disconnect(); } catch { /* já desconectado */ }
+  medidores.delete(chave);
+}
+
+function lerSaidaSalva() {
+  try {
+    return localStorage.getItem('basement.saidaAudio') || '';
+  } catch {
+    return '';
+  }
+}
+
+function salvarSaida(id) {
+  try {
+    localStorage.setItem('basement.saidaAudio', id);
+  } catch {
+    /* sem armazenamento: tudo bem */
+  }
+}
+
+function volumeEfetivo(identity) {
+  if (estado.mudo) return 0;
+  const individual = volumesIndividuais.has(identity)
+    ? volumesIndividuais.get(identity)
+    : 1;
+  return Math.max(0, Math.min(1, estado.volumeGeral * individual));
+}
+
+function aplicarVolumes() {
+  for (const [chave, item] of audios) {
+    item.track.setVolume(volumeEfetivo(chave.split(':')[0]));
+  }
+}
+
+function aplicarSaida(elemento) {
+  if (!saidaSuportada) return;
+  elemento.setSinkId(estado.saidaAudio || '').catch((erro) => {
+    console.warn('Não consegui usar essa saída de áudio:', erro);
+  });
+}
+
+function adicionarAudio(participante, fonte, track) {
+  if (!LK || track.kind !== LK.Track.Kind.Audio) return;
+  // Só toca o som da tela compartilhada. A voz continua no Discord.
+  if (fonte !== LK.Track.Source.ScreenShareAudio) return;
+
+  removerAudio(participante, fonte);
+  if (estado.espectador) return;
+
+  const elemento = track.attach();
+  elemento.autoplay = true;
+  contAudios.appendChild(elemento);
+  audios.set(chaveTile(participante, fonte), { track, elemento });
+
+  aplicarSaida(elemento);
+  track.setVolume(volumeEfetivo(participante.identity));
+  if (sala) sala.startAudio().catch(() => {});
+
+  dizerAudio(`áudio de ${nomeDe(participante)} recebido, iniciando...`);
+  elemento.play().catch((erro) => {
+    dizerAudio(`o navegador bloqueou o play (${erro.name}). Clique na página.`);
+  });
+  iniciarMedidor(chaveTile(participante, fonte), nomeDe(participante), track);
+}
+
+function removerAudio(participante, fonte) {
+  const chave = chaveTile(participante, fonte);
+  const item = audios.get(chave);
+  if (!item) return;
+
+  pararMedidor(chave);
+  item.track.detach(item.elemento);
+  item.elemento.remove();
+  audios.delete(chave);
+}
+
+function removerAudiosDe(participante) {
+  for (const chave of [...audios.keys()]) {
+    if (chave.startsWith(participante.identity + ':')) {
+      const item = audios.get(chave);
+      pararMedidor(chave);
+      item.track.detach(item.elemento);
+      item.elemento.remove();
+      audios.delete(chave);
+    }
+  }
+}
+
+function limparAudios() {
+  for (const chave of [...medidores.keys()]) pararMedidor(chave);
+  for (const item of audios.values()) {
+    item.track.detach(item.elemento);
+    item.elemento.remove();
+  }
+  audios.clear();
+}
+
+function atualizarControlesAudio() {
+  el.volumeGeralTexto.textContent = estado.mudo
+    ? 'Mudo'
+    : Math.round(estado.volumeGeral * 100) + '%';
+  el.btnMudo.textContent = estado.mudo ? 'Ativar som' : 'Silenciar';
+  el.btnMudo.classList.toggle('ativo', estado.mudo);
+}
+
+// Lista as saídas de áudio (caixas, fones...) para o seletor.
+async function listarSaidas(pedirPermissao = false) {
+  if (!saidaSuportada || !navigator.mediaDevices?.enumerateDevices) {
+    el.saidaAudio.innerHTML =
+      '<option value="">Troca de saída indisponível neste navegador</option>';
+    el.saidaAudio.disabled = true;
+    el.btnAtualizarSaidas.disabled = true;
+    return;
+  }
+
+  try {
+    const pegar = async () =>
+      (await navigator.mediaDevices.enumerateDevices()).filter(
+        (d) => d.kind === 'audiooutput'
+      );
+
+    let lista = await pegar();
+
+    // Sem permissão o navegador esconde os nomes. Pedimos só para ler os
+    // nomes e já paramos o microfone (nada é gravado ou enviado).
+    if (pedirPermissao && (lista.length === 0 || lista.every((d) => !d.label))) {
+      try {
+        const fluxo = await navigator.mediaDevices.getUserMedia({ audio: true });
+        fluxo.getTracks().forEach((t) => t.stop());
+      } catch {
+        /* sem permissão: segue com nomes genéricos */
+      }
+      lista = await pegar();
+    }
+
+    el.saidaAudio.innerHTML = '';
+
+    const padrao = document.createElement('option');
+    padrao.value = '';
+    padrao.textContent = 'Padrão do sistema';
+    el.saidaAudio.appendChild(padrao);
+
+    lista.forEach((d, i) => {
+      if (d.deviceId === 'default') return; // já temos "Padrão do sistema"
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || `Saída de áudio ${i + 1}`;
+      el.saidaAudio.appendChild(opt);
+    });
+
+    const existe = [...el.saidaAudio.options].some(
+      (o) => o.value === estado.saidaAudio
+    );
+    el.saidaAudio.value = existe ? estado.saidaAudio : '';
+    el.saidaAudio.disabled = false;
+  } catch (erro) {
+    console.warn('Não consegui listar as saídas de áudio:', erro);
+  }
+}
 
 // Celulares normalmente não permitem compartilhar tela.
 const telaSuportada = !!navigator.mediaDevices?.getDisplayMedia;
@@ -225,24 +451,56 @@ function adicionarTile(participante, fonte, track) {
     } catch (e) { mostrarErro('Não foi possível abrir em tela cheia neste navegador.'); }
   });
 
-  // O áudio da call permanece no Discord; não há uma faixa de áudio do LiveKit
-  // por participante para controlar individualmente neste momento.
-  const volume = document.createElement('div');
-  volume.className = 'tile-volume';
-  volume.title = 'O áudio é reproduzido pelo Discord. O volume individual estará disponível quando o áudio passar pelo Basement.';
-  const volumeIcon = document.createElement('span');
-  volumeIcon.className = 'tile-volume-icon';
-  volumeIcon.innerHTML = criarIcone('volume');
-  volumeIcon.setAttribute('aria-hidden', 'true');
-  const volumeSlider = document.createElement('input');
-  volumeSlider.type = 'range';
-  volumeSlider.min = '0';
-  volumeSlider.max = '100';
-  volumeSlider.value = '100';
-  volumeSlider.disabled = true;
-  volumeSlider.setAttribute('aria-label', 'Volume individual indisponível: áudio pelo Discord');
-  volume.append(volumeIcon, volumeSlider);
-  ferramentas.appendChild(volume);
+  // Volume só do compartilhamento de tela de outra pessoa (só para você).
+  // Câmera e a sua própria tela não têm som para controlar.
+  if (!local && !ehCamera) {
+    const volume = document.createElement('div');
+    volume.className = 'tile-volume';
+    volume.title = 'Volume do som desta transmissão (só para você)';
+
+    const btnMudoTile = document.createElement('button');
+    btnMudoTile.type = 'button';
+    btnMudoTile.className = 'tile-icon-btn';
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = '100';
+    slider.value = String(
+      Math.round((volumesIndividuais.get(participante.identity) ?? 1) * 100)
+    );
+    slider.setAttribute('aria-label', 'Volume desta transmissão');
+
+    let anterior = Number(slider.value) || 100;
+
+    const atualizarIconeTile = () => {
+      const mudo = Number(slider.value) === 0;
+      btnMudoTile.innerHTML = criarIcone(mudo ? 'mute' : 'volume');
+      btnMudoTile.title = mudo ? 'Ativar o som' : 'Silenciar esta transmissão';
+      btnMudoTile.setAttribute('aria-label', btnMudoTile.title);
+    };
+
+    const definirVolume = (valor) => {
+      slider.value = String(valor);
+      volumesIndividuais.set(participante.identity, valor / 100);
+      aplicarVolumes();
+      atualizarIconeTile();
+    };
+
+    slider.addEventListener('input', () => {
+      const v = Number(slider.value);
+      if (v > 0) anterior = v;
+      definirVolume(v);
+    });
+
+    btnMudoTile.addEventListener('click', () => {
+      definirVolume(Number(slider.value) === 0 ? anterior || 100 : 0);
+    });
+
+    atualizarIconeTile();
+    volume.append(btnMudoTile, slider);
+    ferramentas.appendChild(volume);
+  }
   quadro.appendChild(ferramentas);
 
   el.palco.appendChild(quadro);
@@ -262,6 +520,7 @@ function removerTile(participante, fonte) {
 }
 
 function removerTilesDe(participante) {
+  removerAudiosDe(participante);
   for (const chave of [...tiles.keys()]) {
     if (chave.startsWith(participante.identity + ':')) {
       const item = tiles.get(chave);
@@ -274,6 +533,7 @@ function removerTilesDe(participante) {
 }
 
 function limparTiles() {
+  limparAudios();
   for (const item of tiles.values()) {
     item.track.detach(item.video);
     item.quadro.remove();
@@ -288,6 +548,12 @@ function registrarEventos(r) {
 
   // Transmissões dos outros.
   r.on(RoomEvent.TrackSubscribed, (track, publicacao, participante) => {
+    if (track.kind === Track.Kind.Audio) {
+      adicionarAudio(participante, publicacao.source, track);
+      desenhar();
+      return;
+    }
+
     if (!estado.espectador && !publicacao.isMuted) {
       adicionarTile(participante, publicacao.source, track);
     }
@@ -295,6 +561,12 @@ function registrarEventos(r) {
   });
 
   r.on(RoomEvent.TrackUnsubscribed, (track, publicacao, participante) => {
+    if (track.kind === Track.Kind.Audio) {
+      removerAudio(participante, publicacao.source);
+      desenhar();
+      return;
+    }
+
     removerTile(participante, publicacao.source);
     desenhar();
   });
@@ -339,6 +611,35 @@ function registrarEventos(r) {
   ]) {
     r.on(evento, () => desenhar());
   }
+
+  // Diagnóstico: o outro lado publicou áudio da tela?
+  r.on(RoomEvent.TrackPublished, (publicacao, participante) => {
+    if (publicacao.source === Track.Source.ScreenShareAudio) {
+      dizerAudio(`${nomeDe(participante)} publicou o áudio da tela`);
+    }
+  });
+
+  r.on(RoomEvent.TrackSubscriptionFailed, (sid, participante) => {
+    dizerAudio(`falha ao receber uma faixa de ${nomeDe(participante)}`);
+  });
+
+  r.on(RoomEvent.TrackSubscribed, (track, publicacao, participante) => {
+    if (publicacao.source !== Track.Source.ScreenShare) return;
+    setTimeout(() => {
+      if (!participante.getTrackPublication(Track.Source.ScreenShareAudio)) {
+        dizerAudio(`${nomeDe(participante)} está compartilhando a tela SEM áudio (não marcou "Compartilhar áudio")`);
+      }
+    }, 3000);
+  });
+
+  // O navegador pode bloquear o som até você clicar na página.
+  r.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+    if (!r.canPlaybackAudio) {
+      mostrarErro('O navegador bloqueou o som. Clique em qualquer lugar da página para ativar.');
+    } else if (el.erro.textContent.startsWith('O navegador bloqueou')) {
+      mostrarErro('');
+    }
+  });
 
   r.on(RoomEvent.Disconnected, () => {
     if (sala !== r) return; // foi a gente que desconectou
@@ -437,15 +738,20 @@ async function ligarTela() {
   desenhar();
 
   try {
-    // O áudio continua sendo só o do Discord. A captura e a codificação
-    // recebem limites conforme o perfil escolhido no site.
+    // A tela vai com o som (se você marcar "Compartilhar áudio" na janela
+    // do navegador). A voz da call continua pelo Discord.
     const perfilEscolhido = el.perfilTela?.value || 'equilibrado';
     const perfil = PERFIS_TELA[perfilEscolhido] || PERFIS_TELA.equilibrado;
 
     await sala.localParticipant.setScreenShareEnabled(
       true,
       {
-        audio: false,
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+        systemAudio: 'include',
         resolution: perfil.resolution,
         contentHint: perfil.contentHint,
       },
@@ -453,6 +759,15 @@ async function ligarTela() {
         screenShareEncoding: perfil.encoding,
       }
     );
+
+    // Avisa se a tela subiu sem som (o navegador só manda se você marcar).
+    const temAudio =
+      !!sala &&
+      !!sala.localParticipant.getTrackPublication(LK.Track.Source.ScreenShareAudio);
+    dizerAudio(temAudio ? 'a SUA tela está enviando áudio' : 'a SUA tela NÃO está enviando áudio');
+    if (sala && !temAudio) {
+      mostrarErro('Tela compartilhada SEM som. Para enviar o som, compartilhe a "Tela inteira" ou uma aba e marque "Compartilhar áudio" na janela do navegador.');
+    }
   } catch (erro) {
     mostrarErro(mensagemDeErro(erro, 'tela'));
   }
@@ -469,6 +784,7 @@ async function pararTela() {
 
   try {
     await sala.localParticipant.setScreenShareEnabled(false);
+    dizerAudio('');
   } catch (erro) {
     mostrarErro(mensagemDeErro(erro, 'tela'));
   }
@@ -497,14 +813,14 @@ async function alternarModoSala() {
       limparTiles();
       for (const participante of sala.remoteParticipants.values()) {
         for (const publicacao of participante.trackPublications.values()) {
-          if (publicacao.kind === LK.Track.Kind.Video) publicacao.setSubscribed(false);
+          publicacao.setSubscribed(false); // vídeo e som
         }
       }
     } else {
       estado.espectador = false;
       for (const participante of sala.remoteParticipants.values()) {
         for (const publicacao of participante.trackPublications.values()) {
-          if (publicacao.kind === LK.Track.Kind.Video && publicacao.isSubscribed === false) publicacao.setSubscribed(true);
+          if (publicacao.isSubscribed === false) publicacao.setSubscribed(true); // vídeo e som
         }
       }
     }
@@ -520,6 +836,37 @@ el.btnTela.addEventListener('click', ligarTela);
 el.btnParar.addEventListener('click', pararTela);
 
 el.btnSala.addEventListener('click', alternarModoSala);
+
+// ---------- Controles de áudio ----------
+el.volumeGeral.addEventListener('input', () => {
+  estado.volumeGeral = Number(el.volumeGeral.value) / 100;
+  if (estado.volumeGeral > 0) estado.mudo = false;
+  atualizarControlesAudio();
+  aplicarVolumes();
+});
+
+el.btnMudo.addEventListener('click', () => {
+  estado.mudo = !estado.mudo;
+  atualizarControlesAudio();
+  aplicarVolumes();
+});
+
+el.saidaAudio.addEventListener('change', () => {
+  estado.saidaAudio = el.saidaAudio.value;
+  salvarSaida(estado.saidaAudio);
+  for (const item of audios.values()) aplicarSaida(item.elemento);
+});
+
+el.btnAtualizarSaidas.addEventListener('click', () => listarSaidas(true));
+
+if (navigator.mediaDevices?.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', () => listarSaidas(false));
+}
+
+// Um clique na página libera o som caso o navegador tenha bloqueado.
+document.addEventListener('click', () => {
+  if (sala && !sala.canPlaybackAudio) sala.startAudio().catch(() => {});
+});
 
 el.btnRecarregar.addEventListener('click', () => {
   location.reload();
@@ -730,6 +1077,8 @@ async function iniciar() {
   el.canalNome.textContent = dados.canal.nome;
   mostrarTela('app');
 
+  atualizarControlesAudio();
+  listarSaidas(false);
   desenhar();
   conectarSocket();
   conectarLivekit();
