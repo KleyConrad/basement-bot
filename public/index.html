@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Basement — Sala de transmissão</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="audio.css">
 </head>
 <body>
 
@@ -87,23 +86,6 @@
             <option value="qualidade">Alta qualidade · 1080p / até 60 FPS</option>
           </select>
           <small>Escolha antes de compartilhar a tela. A qualidade depende também da internet e do computador.</small>
-        </div>
-
-        <div class="perfil-transmissao audio-transmissao">
-          <label for="saidaAudio">Saída de áudio</label>
-          <div class="audio-linha">
-            <select id="saidaAudio" class="seletor-perfil"></select>
-            <button class="btn" id="btnAtualizarSaidas" type="button">Atualizar lista</button>
-          </div>
-
-          <label for="volumeGeral">Volume da transmissão</label>
-          <div class="audio-linha">
-            <input type="range" id="volumeGeral" min="0" max="100" value="100">
-            <span id="volumeGeralTexto">100%</span>
-            <button class="btn" id="btnMudo" type="button">Silenciar</button>
-          </div>
-
-          <small>Para enviar o som da sua tela, marque "Compartilhar áudio" na janela do navegador. Trocar a saída funciona no Chrome e no Edge.</small>
         </div>
 
         <div class="controles">
