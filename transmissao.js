@@ -4,7 +4,6 @@ const {
   ButtonStyle,
   EmbedBuilder,
 } = require('discord.js');
-const { ID_SERVIDOR } = require('./config');
 
 const COR = '#008CFF'; // mesma borda azul do !tempo
 
@@ -54,7 +53,7 @@ function botaoLink(link) {
 function iniciarTransmissao(client) {
   client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
-    if (!message.guild || message.guild.id !== ID_SERVIDOR) return;
+    if (!message.guild) return; // funciona em qualquer servidor onde o bot esteja
     if (message.content.trim().toLowerCase() !== '!transmitir') return;
 
     try {

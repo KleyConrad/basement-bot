@@ -8,7 +8,7 @@ const session = require('express-session');
 const { Server } = require('socket.io');
 const { AccessToken, RoomServiceClient } = require('livekit-server-sdk');
 
-const { ID_APLICACAO, ID_SERVIDOR } = require('./config');
+const { ID_APLICACAO } = require('./config');
 
 function iniciarWeb(client) {
   const PORTA = process.env.PORT || 3000;
@@ -106,18 +106,19 @@ function iniciarWeb(client) {
   app.use(express.static(path.join(__dirname, 'public')));
 
   // ---------- Descobrir em qual call a pessoa está ----------
+  // Procura a pessoa em todos os servidores onde o bot está.
   // Se o bot não estiver pronto ou não achar a pessoa, devolve null
   // (e o acesso fica bloqueado).
   function canalDeVoz(userId) {
     if (!client.isReady()) return null;
 
-    const servidorDiscord = client.guilds.cache.get(ID_SERVIDOR);
-    if (!servidorDiscord) return null;
+    for (const servidorDiscord of client.guilds.cache.values()) {
+      const canal = servidorDiscord.voiceStates.cache.get(userId)?.channel;
 
-    const canal = servidorDiscord.voiceStates.cache.get(userId)?.channel;
-    if (!canal) return null;
+      if (canal) return { id: canal.id, nome: canal.name };
+    }
 
-    return { id: canal.id, nome: canal.name };
+    return null;
   }
 
   // ---------- Login com Discord ----------
