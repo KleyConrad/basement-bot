@@ -786,9 +786,9 @@ input[type="range"]::-moz-range-thumb {
 
 .login-card h1 {
   font-size: 1.9rem;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.2;
-  letter-spacing: -.01em;
+  letter-spacing: 0.1em;
 }
 
 .login-card h1 span {
