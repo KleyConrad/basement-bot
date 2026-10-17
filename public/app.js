@@ -25,7 +25,6 @@ const el = {
   btnSala: $('btnSala'),
   perfilTela: $('perfilTela'),
   saidaAudio: $('saidaAudio'),
-  antiVoz: $('antiVoz'),
   btnAtualizarSaidas: $('btnAtualizarSaidas'),
   btnMudo: $('btnMudo'),
   volumeGeral: $('volumeGeral'),
@@ -48,7 +47,6 @@ const estado = {
   volumeGeral: 1,        // 0 a 1, vale para todas as transmissões
   mudo: false,           // silencia todas as transmissões
   saidaAudio: lerSaidaSalva(), // id do dispositivo de saída ('' = padrão)
-  antiVoz: lerAntiVoz(),       // reduzir a própria voz na transmissão
 };
 
 const tilesOcultos = new Set();
@@ -176,9 +174,7 @@ function volumeEfetivo(identity) {
 
 function aplicarVolumes() {
   for (const [chave, item] of audios) {
-    const volume = volumeEfetivo(chave.split(':')[0]);
-    item.track.setVolume(volume);
-    if (item.anti) item.anti.saida.volume = volume;
+    item.track.setVolume(volumeEfetivo(chave.split(':')[0]));
   }
 }
 
@@ -200,7 +196,7 @@ function adicionarAudio(participante, fonte, track) {
   const elemento = track.attach();
   elemento.autoplay = true;
   contAudios.appendChild(elemento);
-  audios.set(chaveTile(participante, fonte), { track, elemento, anti: null });
+  audios.set(chaveTile(participante, fonte), { track, elemento });
 
   aplicarSaida(elemento);
   track.setVolume(volumeEfetivo(participante.identity));
@@ -212,7 +208,6 @@ function adicionarAudio(participante, fonte, track) {
     mostrarErro('O navegador bloqueou o som. Clique em qualquer lugar da página para ativar.');
   });
   iniciarMedidor(chaveTile(participante, fonte), nomeDe(participante), track);
-  ligarAnti(chaveTile(participante, fonte));
 }
 
 function removerAudio(participante, fonte) {
@@ -221,11 +216,9 @@ function removerAudio(participante, fonte) {
   if (!item) return;
 
   pararMedidor(chave);
-  desligarAnti(item);
   item.track.detach(item.elemento);
   item.elemento.remove();
   audios.delete(chave);
-  soltarMicSeVazio();
 }
 
 function removerAudiosDe(participante) {
@@ -233,196 +226,20 @@ function removerAudiosDe(participante) {
     if (chave.startsWith(participante.identity + ':')) {
       const item = audios.get(chave);
       pararMedidor(chave);
-      desligarAnti(item);
       item.track.detach(item.elemento);
       item.elemento.remove();
       audios.delete(chave);
     }
   }
-  soltarMicSeVazio();
 }
 
 function limparAudios() {
   for (const chave of [...medidores.keys()]) pararMedidor(chave);
   for (const item of audios.values()) {
-    desligarAnti(item);
     item.track.detach(item.elemento);
     item.elemento.remove();
   }
   audios.clear();
-  soltarMicSeVazio();
-}
-
-// ---------- Reduzir a SUA voz na transmissão (experimental) ----------
-// Quem transmite manda o som do computador, e nele vem a sua voz (que passou
-// pelo Discord dele). Aqui, no seu navegador, o arquivo anti-voz.js usa o seu
-// microfone só como referência para reconhecer a sua voz e abaixá-la.
-// Nada é gravado nem enviado. Se algo falhar, o som toca normalmente.
-function lerAntiVoz() {
-  try {
-    return localStorage.getItem('basement.antiVoz') !== '0';
-  } catch {
-    return true;
-  }
-}
-
-function salvarAntiVoz(ligado) {
-  try {
-    localStorage.setItem('basement.antiVoz', ligado ? '1' : '0');
-  } catch {
-    /* sem armazenamento: tudo bem */
-  }
-}
-
-const antiSuportado =
-  typeof AudioWorkletNode !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
-let ctxAnti = null;
-let moduloAnti = null;
-let micAnti = null;
-let micPedido = null;
-let antiBloqueado = '';
-
-const statusAnti = document.createElement('p');
-statusAnti.className = 'status-som';
-el.painelAudio.appendChild(statusAnti);
-
-function dizerAnti(texto) {
-  statusAnti.textContent = texto ? 'Reduzir minha voz: ' + texto : '';
-}
-
-async function garantirContexto() {
-  if (!ctxAnti) {
-    ctxAnti = new (window.AudioContext || window.webkitAudioContext)();
-    ctxAnti.onstatechange = () => {
-      // Se o navegador pausar o áudio, volta para o som normal.
-      if (ctxAnti.state !== 'running') {
-        for (const item of audios.values()) desligarAnti(item);
-        soltarMicSeVazio();
-      }
-    };
-    moduloAnti = ctxAnti.audioWorklet.addModule('/anti-voz.js');
-  }
-  await moduloAnti;
-  await ctxAnti.resume();
-}
-
-async function garantirMic() {
-  if (micAnti) return micAnti;
-  if (!micPedido) {
-    micPedido = navigator.mediaDevices
-      .getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          channelCount: 1,
-        },
-      })
-      .then((fluxo) => {
-        micAnti = { fluxo, fonte: ctxAnti.createMediaStreamSource(fluxo) };
-        return micAnti;
-      })
-      .finally(() => {
-        micPedido = null;
-      });
-  }
-  return micPedido;
-}
-
-async function ligarAnti(chave) {
-  const item = audios.get(chave);
-  if (!item || item.anti || item.ligando || !estado.antiVoz) return;
-  if (!antiSuportado) {
-    dizerAnti('indisponível neste navegador (som normal)');
-    return;
-  }
-  if (antiBloqueado) {
-    dizerAnti(antiBloqueado);
-    return;
-  }
-
-  item.ligando = true;
-  try {
-    await garantirContexto();
-    if (ctxAnti.state !== 'running') {
-      dizerAnti('clique na página para ativar (som normal por enquanto)');
-      return;
-    }
-    await garantirMic();
-    if (audios.get(chave) !== item || !estado.antiVoz || item.anti) return;
-
-    const fonte = ctxAnti.createMediaStreamSource(
-      new MediaStream([item.track.mediaStreamTrack])
-    );
-    const no = new AudioWorkletNode(ctxAnti, 'anti-voz', {
-      numberOfInputs: 2,
-      numberOfOutputs: 1,
-      outputChannelCount: [2],
-      channelCount: 2,
-      channelCountMode: 'explicit',
-    });
-    fonte.connect(no, 0, 0);
-    micAnti.fonte.connect(no, 0, 1);
-
-    const destino = ctxAnti.createMediaStreamDestination();
-    no.connect(destino);
-
-    const saida = new Audio();
-    saida.autoplay = true;
-    saida.srcObject = destino.stream;
-    contAudios.appendChild(saida);
-    aplicarSaida(saida);
-    saida.volume = volumeEfetivo(chave.split(':')[0]);
-
-    item.anti = { fonte, no, destino, saida };
-    no.port.onmessage = (e) => {
-      const d = e.data || {};
-      dizerAnti(
-        d.atrasoMs == null
-          ? 'ligado · aprendendo (aparece quando você falar)'
-          : `ligado · atraso ${d.atrasoMs} ms · redução ${Math.max(0, d.reducaoDb).toFixed(1)} dB`
-      );
-    };
-
-    await saida.play();
-    item.elemento.muted = true; // só silencia o som original depois que o novo está tocando
-    dizerAnti('ligado · aprendendo (aparece quando você falar)');
-  } catch (erro) {
-    desligarAnti(item);
-    console.warn('[anti-voz] não foi possível ligar:', erro);
-    if (erro?.name === 'NotAllowedError' || erro?.name === 'SecurityError') {
-      antiBloqueado = 'sem permissão do microfone (som normal)';
-    } else if (erro?.name === 'NotFoundError') {
-      antiBloqueado = 'nenhum microfone encontrado (som normal)';
-    } else {
-      antiBloqueado = 'não foi possível ligar (som normal)';
-    }
-    dizerAnti(antiBloqueado);
-  } finally {
-    item.ligando = false;
-  }
-}
-
-function desligarAnti(item) {
-  const a = item.anti;
-  if (!a) return;
-  item.anti = null;
-  a.no.port.onmessage = null;
-  try { a.fonte.disconnect(); } catch { /* já desconectado */ }
-  try { a.no.disconnect(); } catch { /* já desconectado */ }
-  a.saida.pause();
-  a.saida.srcObject = null;
-  a.saida.remove();
-  item.elemento.muted = false;
-}
-
-function soltarMicSeVazio() {
-  if (!micAnti) return;
-  for (const item of audios.values()) if (item.anti) return;
-  micAnti.fluxo.getTracks().forEach((t) => t.stop());
-  try { micAnti.fonte.disconnect(); } catch { /* já desconectado */ }
-  micAnti = null;
-  dizerAnti(estado.antiVoz ? 'aguardando uma transmissão com som' : 'desligado');
 }
 
 function atualizarControlesAudio() {
@@ -1095,33 +912,10 @@ el.btnMudo.addEventListener('click', () => {
 el.saidaAudio.addEventListener('change', () => {
   estado.saidaAudio = el.saidaAudio.value;
   salvarSaida(estado.saidaAudio);
-  for (const item of audios.values()) {
-    aplicarSaida(item.elemento);
-    if (item.anti) aplicarSaida(item.anti.saida);
-  }
+  for (const item of audios.values()) aplicarSaida(item.elemento);
 });
 
 el.btnAtualizarSaidas.addEventListener('click', () => listarSaidas(true));
-
-el.antiVoz.checked = estado.antiVoz;
-el.antiVoz.addEventListener('change', () => {
-  estado.antiVoz = el.antiVoz.checked;
-  salvarAntiVoz(estado.antiVoz);
-  antiBloqueado = '';
-  if (estado.antiVoz) {
-    for (const chave of audios.keys()) ligarAnti(chave);
-  } else {
-    for (const item of audios.values()) desligarAnti(item);
-    soltarMicSeVazio();
-    dizerAnti('desligado');
-  }
-});
-
-// Se o navegador exigiu um clique para liberar o áudio, tenta de novo aqui.
-document.addEventListener('click', () => {
-  if (!estado.antiVoz || antiBloqueado) return;
-  for (const [chave, item] of audios) if (!item.anti) ligarAnti(chave);
-});
 
 if (navigator.mediaDevices?.addEventListener) {
   navigator.mediaDevices.addEventListener('devicechange', () => listarSaidas(false));

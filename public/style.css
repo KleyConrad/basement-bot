@@ -676,28 +676,6 @@ input[type="range"]::-moz-range-thumb {
   color: var(--texto);
 }
 
-.painel label.opcao-anti {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--texto);
-  font-size: .82rem;
-  font-weight: 500;
-  letter-spacing: 0;
-  text-transform: none;
-  cursor: pointer;
-}
-
-.opcao-anti em {
-  color: var(--suave);
-  font-style: normal;
-  font-size: .72rem;
-}
-
-.opcao-anti input {
-  accent-color: var(--azul);
-}
-
 .status-som {
   color: var(--suave);
   font-size: .76rem;
@@ -808,9 +786,9 @@ input[type="range"]::-moz-range-thumb {
 
 .login-card h1 {
   font-size: 1.9rem;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.2;
-  letter-spacing: -.01em;
+  letter-spacing: 0.1em;
 }
 
 .login-card h1 span {
