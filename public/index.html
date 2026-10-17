@@ -3,16 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Basement — Sala de transmissão</title>
+  <title>Konrad — Sala de transmissão</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="audio.css">
 </head>
 <body>
 
   <!-- Tela de login -->
   <main class="login login-novo" id="telaLogin" hidden>
     <div class="login-card">
-      <div class="login-marca">BASEMENT</div>
+      <div class="login-marca">KONRAD</div>
       <p class="login-eyebrow">SUA SALA, EM SINCRONIA</p>
       <h1>Compartilhe,<br><span>Fique junto.</span></h1>
       <p class="login-sub">Entre com o Discord e acompanhe a câmera e a tela da sua call.</p>
@@ -23,14 +22,14 @@
       </div>
       <p class="login-aviso" id="loginAviso" hidden></p>
       <a class="btn ativo login-botao" href="/login"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8 8.5a8 8 0 0 1 8 0M6 6.5a12 12 0 0 1 12 0M9 16l-1 2c-2-.5-3.5-1.5-4.5-3.5L2.5 9C4 7.5 5.5 6.5 7 6l1 2m8 8 1 2c2-.5 3.5-1.5 4.5-3.5L21.5 9C20 7.5 18.5 6.5 17 6l-1 2M9 13h.01M15 13h.01"/></svg> Continuar com Discord</a>
-      <p class="login-rodape">Basement · sua comunidade, em sincronia.</p>
+      <p class="login-rodape">Konrad · transmissão de tela.</p>
     </div>
   </main>
 
   <!-- Tela quando a pessoa não está numa call -->
   <main class="login login-novo" id="telaSemCall" hidden>
     <div class="login-card login-card-aviso">
-      <div class="login-marca">Basement</div>
+      <div class="login-marca">Konrad</div>
       <p class="login-eyebrow">ACESSO À SALA</p>
       <h1>Quase lá.</h1>
       <p class="login-sub" id="semCallMsg"></p>
@@ -43,89 +42,106 @@
   <div class="app" id="telaApp" hidden>
 
     <header class="topo">
-      <div class="marca" aria-label="Basement">
-        <div class="logo">BASEMENT</div>
-      </div>
+      <div class="logo" aria-label="Konrad">KONRAD</div>
 
-      <div class="canal">
-        <span class="canal-rotulo">Canal de voz</span>
+      <div class="canal" title="Canal de voz">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
         <span class="canal-nome" id="canalNome"></span>
+        <span class="ao-vivo" id="transmissorWrap" hidden>
+          <i class="ponto-vivo" aria-hidden="true"></i>
+          <span id="transmissor">ninguém</span>
+        </span>
       </div>
 
       <div class="conexao">
         <span class="ponto" id="ponto"></span>
-        <span id="status">Conectando...</span>
-        <span class="conta" aria-label="Conta conectada">
-          <span class="conta-ponto" aria-hidden="true"></span>
-          <span class="conta-nome" id="usuarioNome">Usuário</span>
-        </span>
-        <a class="sair" href="/logout">Sair</a>
+        <span class="status" id="status">Conectando...</span>
+        <span class="conta-nome" id="usuarioNome">Usuário</span>
+        <a class="sair" href="/logout" title="Sair da conta" aria-label="Sair da conta">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </a>
       </div>
     </header>
 
-    <div class="corpo">
+    <main class="principal">
 
-      <section class="principal">
-        <!-- As transmissões aparecem aqui dentro, cada uma num quadro. -->
-        <div class="palco" id="palco">
-          <div class="palco-texto" id="palcoTexto">
-            <p id="palcoTitulo">Conectando à sala...</p>
-            <span id="palcoSub"></span>
+      <!-- As transmissões aparecem aqui dentro, cada uma num quadro. -->
+      <div class="palco" id="palco">
+        <div class="palco-texto" id="palcoTexto">
+          <div class="palco-icone" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           </div>
+          <p id="palcoTitulo">Conectando à sala...</p>
+          <span id="palcoSub"></span>
         </div>
+      </div>
 
-        <div class="transmissao">
-          <span>Transmitindo agora</span> <strong id="transmissor">ninguém</strong>
-          <span class="modo-espectador" id="avisoEspectador" hidden>Modo espectador: mídia desativada</span>
-        </div>
+      <p class="erro" id="erro" hidden title="Clique para fechar"></p>
 
-        <div class="perfil-transmissao">
-          <label for="perfilTela">Qualidade da transmissão</label>
-          <select id="perfilTela" class="seletor-perfil">
-            <option value="fluido">Fluido · 720p / 30 FPS</option>
-            <option value="equilibrado" selected>Equilibrado · 1080p / 30 FPS</option>
-            <option value="qualidade">Alta qualidade · 1080p / até 60 FPS</option>
-          </select>
-          <small>Escolha antes de compartilhar a tela. A qualidade depende também da internet e do computador.</small>
-        </div>
+      <div class="dock-area">
+        <nav class="dock" aria-label="Controles da transmissão">
 
-        <div class="perfil-transmissao audio-transmissao">
-          <label for="saidaAudio">Saída de áudio</label>
-          <div class="audio-linha">
-            <select id="saidaAudio" class="seletor-perfil"></select>
-            <button class="btn" id="btnAtualizarSaidas" type="button">Atualizar lista</button>
+          <button class="dock-btn com-texto" id="btnCamera" type="button"></button>
+          <button class="dock-btn com-texto" id="btnTela" type="button"></button>
+          <button class="dock-btn com-texto" id="btnParar" type="button" hidden></button>
+
+          <span class="dock-sep" aria-hidden="true"></span>
+
+          <div class="dock-volume">
+            <button class="dock-btn" id="btnMudo" type="button"></button>
+            <input type="range" id="volumeGeral" min="0" max="100" value="100" aria-label="Volume da transmissão">
+            <span class="volume-texto" id="volumeGeralTexto">100%</span>
           </div>
 
-          <label for="volumeGeral">Volume da transmissão</label>
-          <div class="audio-linha">
-            <input type="range" id="volumeGeral" min="0" max="100" value="100">
-            <span id="volumeGeralTexto">100%</span>
-            <button class="btn" id="btnMudo" type="button">Silenciar</button>
+          <div class="dock-item">
+            <button class="dock-btn" id="btnAudioMenu" type="button" title="Saída de áudio" aria-label="Saída de áudio" aria-expanded="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+            </button>
+            <div class="painel" id="painelAudio" hidden>
+              <label for="saidaAudio">Saída de áudio</label>
+              <div class="painel-linha">
+                <select id="saidaAudio" class="seletor"></select>
+                <button class="dock-btn pequeno" id="btnAtualizarSaidas" type="button" title="Atualizar lista" aria-label="Atualizar lista de saídas">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+              </div>
+              <small>Para enviar o som da sua tela, marque “Compartilhar áudio” na janela do navegador. Trocar a saída funciona no Chrome e no Edge.</small>
+            </div>
           </div>
 
-          <small>Para enviar o som da sua tela, marque "Compartilhar áudio" na janela do navegador. Trocar a saída funciona no Chrome e no Edge.</small>
-        </div>
+          <div class="dock-item">
+            <button class="dock-btn" id="btnQualidadeMenu" type="button" title="Qualidade da transmissão" aria-label="Qualidade da transmissão" aria-expanded="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            </button>
+            <div class="painel" id="painelQualidade" hidden>
+              <label for="perfilTela">Qualidade ao compartilhar a tela</label>
+              <select id="perfilTela" class="seletor">
+                <option value="fluido">Fluido · 720p / 30 FPS</option>
+                <option value="equilibrado" selected>Equilibrado · 1080p / 30 FPS</option>
+                <option value="qualidade">Alta qualidade · 1080p / até 60 FPS</option>
+              </select>
+              <small>Escolha antes de compartilhar a tela. A qualidade depende também da internet e do computador.</small>
+            </div>
+          </div>
 
-        <div class="controles">
-          <button class="btn" id="btnCamera">Ligar câmera</button>
-          <button class="btn" id="btnTela">Compartilhar tela</button>
-          <button class="btn" id="btnParar">Encerrar compartilhamento</button>
-          <button class="btn perigo" id="btnSala">Sair da sala</button>
-        </div>
+          <div class="dock-item">
+            <button class="dock-btn" id="btnPessoas" type="button" title="Pessoas na sala" aria-label="Pessoas na sala" aria-expanded="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <span class="badge" id="listaContagem">0</span>
+            </button>
+            <div class="painel" id="painelPessoas" hidden>
+              <label>Na sala</label>
+              <ul id="lista" aria-label="Membros conectados à sala"></ul>
+            </div>
+          </div>
 
-        <p class="erro" id="erro" hidden></p>
-      </section>
+          <span class="dock-sep" aria-hidden="true"></span>
 
-      <aside class="lateral">
-        <div class="lateral-cabecalho">
-          <h2>Na sala</h2>
-          <span class="lista-contagem" id="listaContagem">0 pessoas</span>
-        </div>
-        <p class="lateral-ajuda">Quem está conectado à sala agora.</p>
-        <ul id="lista" aria-label="Membros conectados à sala"></ul>
-      </aside>
+          <button class="dock-btn com-texto" id="btnSala" type="button"></button>
+        </nav>
+      </div>
 
-    </div>
+    </main>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>

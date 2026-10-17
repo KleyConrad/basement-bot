@@ -29,6 +29,13 @@ const el = {
   btnMudo: $('btnMudo'),
   volumeGeral: $('volumeGeral'),
   volumeGeralTexto: $('volumeGeralTexto'),
+  transmissorWrap: $('transmissorWrap'),
+  btnAudioMenu: $('btnAudioMenu'),
+  btnQualidadeMenu: $('btnQualidadeMenu'),
+  btnPessoas: $('btnPessoas'),
+  painelAudio: $('painelAudio'),
+  painelQualidade: $('painelQualidade'),
+  painelPessoas: $('painelPessoas'),
 };
 
 const estado = {
@@ -50,6 +57,35 @@ const LK = typeof LivekitClient !== 'undefined' ? LivekitClient : null;
 let sala = null;          // a sala de vídeo atual
 const tiles = new Map();  // quadros de vídeo na tela
 
+// ---------- Ícones e botões ----------
+const ICONES = {
+  video: '<polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>',
+  videoOff: '<path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/><line x1="1" y1="1" x2="23" y2="23"/>',
+  monitor: '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+  stop: '<rect x="5" y="5" width="14" height="14" rx="2"/>',
+  volume: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>',
+  volumeX: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>',
+  logIn: '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>',
+  logOut: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
+  refresh: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+};
+
+function icone(nome) {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICONES[nome] || ''}</svg>`;
+}
+
+// Troca o ícone e o texto de um botão da barra (o texto só aparece em telas largas).
+function definirBotao(botao, nomeIcone, texto, dica) {
+  botao.innerHTML = `${icone(nomeIcone)}<span class="btn-txt">${texto}</span>`;
+  botao.title = dica || texto;
+  botao.setAttribute('aria-label', dica || texto);
+}
+
+// Pinta a parte "cheia" da barrinha de volume.
+function preencherSlider(input) {
+  input.style.setProperty('--p', input.value + '%');
+}
+
 // ---------- Áudio das transmissões ----------
 // O som da tela compartilhada chega como uma faixa de áudio separada.
 // Cada faixa tem um <audio> escondido; é ele que toca no seu dispositivo.
@@ -66,8 +102,8 @@ const saidaSuportada =
 // ---------- Diagnóstico: mostra na tela o que está acontecendo com o som ----------
 const statusAudio = document.createElement('p');
 statusAudio.id = 'statusAudio';
-statusAudio.style.cssText = 'margin:6px 0 0;font-size:.82rem;color:#8dbaff;';
-el.erro.insertAdjacentElement('afterend', statusAudio);
+statusAudio.className = 'status-som';
+el.painelAudio.appendChild(statusAudio);
 
 function dizerAudio(texto) {
   console.log('[áudio]', texto);
@@ -114,7 +150,7 @@ function pararMedidor(chave) {
 
 function lerSaidaSalva() {
   try {
-    return localStorage.getItem('basement.saidaAudio') || '';
+    return localStorage.getItem('konrad.saidaAudio') || '';
   } catch {
     return '';
   }
@@ -122,7 +158,7 @@ function lerSaidaSalva() {
 
 function salvarSaida(id) {
   try {
-    localStorage.setItem('basement.saidaAudio', id);
+    localStorage.setItem('konrad.saidaAudio', id);
   } catch {
     /* sem armazenamento: tudo bem */
   }
@@ -169,6 +205,7 @@ function adicionarAudio(participante, fonte, track) {
   dizerAudio(`áudio de ${nomeDe(participante)} recebido, iniciando...`);
   elemento.play().catch((erro) => {
     dizerAudio(`o navegador bloqueou o play (${erro.name}). Clique na página.`);
+    mostrarErro('O navegador bloqueou o som. Clique em qualquer lugar da página para ativar.');
   });
   iniciarMedidor(chaveTile(participante, fonte), nomeDe(participante), track);
 }
@@ -209,8 +246,15 @@ function atualizarControlesAudio() {
   el.volumeGeralTexto.textContent = estado.mudo
     ? 'Mudo'
     : Math.round(estado.volumeGeral * 100) + '%';
-  el.btnMudo.textContent = estado.mudo ? 'Ativar som' : 'Silenciar';
-  el.btnMudo.classList.toggle('ativo', estado.mudo);
+  const semSom = estado.mudo || estado.volumeGeral === 0;
+  definirBotao(
+    el.btnMudo,
+    semSom ? 'volumeX' : 'volume',
+    semSom ? 'Ativar som' : 'Silenciar',
+    semSom ? 'Ativar o som' : 'Silenciar a transmissão'
+  );
+  el.btnMudo.classList.toggle('ativo', semSom);
+  el.volumeGeral.style.setProperty('--p', (estado.mudo ? 0 : estado.volumeGeral * 100) + '%');
 }
 
 // Lista as saídas de áudio (caixas, fones...) para o seletor.
@@ -470,6 +514,7 @@ function adicionarTile(participante, fonte, track) {
       Math.round((volumesIndividuais.get(participante.identity) ?? 1) * 100)
     );
     slider.setAttribute('aria-label', 'Volume desta transmissão');
+    preencherSlider(slider);
 
     let anterior = Number(slider.value) || 100;
 
@@ -482,6 +527,7 @@ function adicionarTile(participante, fonte, track) {
 
     const definirVolume = (valor) => {
       slider.value = String(valor);
+      preencherSlider(slider);
       volumesIndividuais.set(participante.identity, valor / 100);
       aplicarVolumes();
       atualizarIconeTile();
@@ -634,7 +680,7 @@ function registrarEventos(r) {
 
   // O navegador pode bloquear o som até você clicar na página.
   r.on(RoomEvent.AudioPlaybackStatusChanged, () => {
-    if (!r.canPlaybackAudio) {
+    if (!r.canPlaybackAudio && audios.size > 0) {
       mostrarErro('O navegador bloqueou o som. Clique em qualquer lugar da página para ativar.');
     } else if (el.erro.textContent.startsWith('O navegador bloqueou')) {
       mostrarErro('');
@@ -865,7 +911,48 @@ if (navigator.mediaDevices?.addEventListener) {
 
 // Um clique na página libera o som caso o navegador tenha bloqueado.
 document.addEventListener('click', () => {
-  if (sala && !sala.canPlaybackAudio) sala.startAudio().catch(() => {});
+  if (sala && !sala.canPlaybackAudio) {
+    sala.startAudio().then(() => {
+      if (el.erro.textContent.startsWith('O navegador bloqueou')) mostrarErro('');
+    }).catch(() => {});
+  }
+});
+
+// Clicar no aviso fecha ele.
+el.erro.addEventListener('click', () => mostrarErro(''));
+
+// ---------- Menus da barra (áudio, qualidade, pessoas) ----------
+const menus = [
+  [el.btnAudioMenu, el.painelAudio],
+  [el.btnQualidadeMenu, el.painelQualidade],
+  [el.btnPessoas, el.painelPessoas],
+];
+
+function fecharMenus(exceto) {
+  for (const [botao, painel] of menus) {
+    if (painel === exceto) continue;
+    painel.hidden = true;
+    botao.classList.remove('aberto');
+    botao.setAttribute('aria-expanded', 'false');
+  }
+}
+
+for (const [botao, painel] of menus) {
+  botao.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const abrir = painel.hidden;
+    fecharMenus(painel);
+    painel.hidden = !abrir;
+    botao.classList.toggle('aberto', abrir);
+    botao.setAttribute('aria-expanded', String(abrir));
+    if (abrir && painel === el.painelAudio) listarSaidas(false);
+  });
+  painel.addEventListener('click', (ev) => ev.stopPropagation());
+}
+
+document.addEventListener('click', () => fecharMenus(null));
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') fecharMenus(null);
 });
 
 el.btnRecarregar.addEventListener('click', () => {
@@ -898,25 +985,36 @@ function desenhar() {
     (online ? 'online' : midia === 'conectando' ? '' : 'offline');
 
   // Botões
-  el.btnCamera.textContent = camera ? 'Desligar câmera' : 'Ligar câmera';
+  definirBotao(el.btnCamera, camera ? 'video' : 'videoOff', camera ? 'Desligar câmera' : 'Ligar câmera');
   el.btnCamera.classList.toggle('ativo', camera);
   el.btnCamera.disabled = !online || ocupado || estado.espectador;
 
   el.btnTela.classList.toggle('ativo', tela);
   el.btnTela.disabled = !online || ocupado || tela || !telaSuportada || estado.espectador;
-  el.btnTela.title = telaSuportada
-    ? ''
-    : 'Este navegador não permite compartilhar a tela.';
+  definirBotao(
+    el.btnTela,
+    'monitor',
+    'Compartilhar tela',
+    telaSuportada ? 'Compartilhar tela' : 'Este navegador não permite compartilhar a tela.'
+  );
+  el.btnTela.hidden = tela; // enquanto compartilha, aparece o botão de parar
 
   el.btnParar.disabled = !online || ocupado || !tela || estado.espectador;
+  el.btnParar.hidden = !tela;
+  definirBotao(el.btnParar, 'stop', 'Parar', 'Encerrar compartilhamento');
   if (el.perfilTela) el.perfilTela.disabled = ocupado || tela;
 
-  el.btnSala.textContent =
+  const textoSala =
     midia === 'online' && estado.espectador ? 'Voltar à transmissão'
     : midia === 'online' ? 'Sair da transmissão'
     : midia === 'conectando' ? 'Conectando...'
     : midia === 'erro' ? 'Tentar novamente'
     : 'Entrar na sala';
+  definirBotao(
+    el.btnSala,
+    midia === 'online' && !estado.espectador ? 'logOut' : midia === 'erro' ? 'refresh' : 'logIn',
+    textoSala
+  );
   el.btnSala.classList.toggle('entrar', midia === 'offline' || midia === 'erro' || (midia === 'online' && estado.espectador));
   el.btnSala.classList.toggle('sair-sala', midia === 'online' && !estado.espectador);
   el.btnSala.classList.toggle('ativo', false);
@@ -948,7 +1046,8 @@ function desenhar() {
     : [];
 
   if (el.listaContagem) {
-    el.listaContagem.textContent = `${todos.length} ${todos.length === 1 ? 'pessoa' : 'pessoas'}`;
+    el.listaContagem.textContent = String(todos.length);
+    el.btnPessoas.title = `${todos.length} ${todos.length === 1 ? 'pessoa' : 'pessoas'} na sala`;
   }
 
   if (todos.length === 0) {
@@ -957,6 +1056,7 @@ function desenhar() {
     vazio.textContent = 'Ninguém conectado';
     el.lista.appendChild(vazio);
     el.transmissor.textContent = 'ninguém';
+    el.transmissorWrap.hidden = true;
     if (el.avisoEspectador) el.avisoEspectador.hidden = !estado.espectador;
     return;
   }
@@ -992,6 +1092,7 @@ function desenhar() {
     .map((p) => (p === sala.localParticipant ? 'Você' : nomeDe(p)));
 
   el.transmissor.textContent = quem.length ? quem.join(', ') : 'ninguém';
+  el.transmissorWrap.hidden = quem.length === 0;
   if (el.avisoEspectador) el.avisoEspectador.hidden = !estado.espectador;
 }
 
