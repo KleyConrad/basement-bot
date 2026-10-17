@@ -150,7 +150,7 @@ function pararMedidor(chave) {
 
 function lerSaidaSalva() {
   try {
-    return localStorage.getItem('konrad.saidaAudio') || '';
+    return localStorage.getItem('basement.saidaAudio') || '';
   } catch {
     return '';
   }
@@ -158,7 +158,7 @@ function lerSaidaSalva() {
 
 function salvarSaida(id) {
   try {
-    localStorage.setItem('konrad.saidaAudio', id);
+    localStorage.setItem('basement.saidaAudio', id);
   } catch {
     /* sem armazenamento: tudo bem */
   }

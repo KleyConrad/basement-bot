@@ -1,5 +1,5 @@
 /* ============================================================
-   Konrad — visual minimalista
+   Basement — visual minimalista
    ============================================================ */
 
 :root {
@@ -93,7 +93,9 @@ svg {
 .topo {
   flex: none;
   height: 56px;
-  padding: 0 20px;
+  width: min(calc(100% - 32px), var(--palco-max));
+  margin: 0 auto;
+  padding: 0 6px;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
@@ -902,6 +904,7 @@ input[type="range"]::-moz-range-thumb {
 @media (max-width: 720px) {
   .topo {
     grid-template-columns: 1fr auto;
+    width: 100%;
     padding: 0 14px;
   }
 
