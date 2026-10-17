@@ -720,7 +720,19 @@ async function conectarLivekit() {
 
     const { url, token } = await resposta.json();
 
-    sala = new LK.Room({ adaptiveStream: true, dynacast: true });
+    sala = new LK.Room({
+      adaptiveStream: true,
+      dynacast: true,
+      publishDefaults: {
+        // H.264 usa a placa de vídeo para codificar (bem mais leve para o PC
+        // de quem transmite do que o VP8, que usa o processador).
+        videoCodec: 'h264',
+        // Sem codec reserva: evita codificar o vídeo duas vezes.
+        backupCodec: false,
+        // Só uma versão da tela (sem camadas extras) = menos trabalho no PC.
+        screenShareSimulcastLayers: [],
+      },
+    });
     registrarEventos(sala);
     await sala.connect(url, token);
 
