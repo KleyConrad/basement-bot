@@ -14,6 +14,7 @@
   --verde: #3ddc97;
   --vermelho: #ff6b7a;
   --raio: 16px;
+  --palco-max: 1280px; /* largura máxima da área de vídeo: diminua para o vídeo ficar menor */
 }
 
 * {
@@ -213,12 +214,17 @@ svg {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 14px;
   padding: 0 16px 16px;
 }
 
 .palco {
-  flex: 1;
+  flex: 0 1 auto;
+  width: min(100%, var(--palco-max));
+  aspect-ratio: 16 / 9;
+  max-height: calc(100% - 70px);
   min-height: 0;
   display: flex;
   align-items: center;
@@ -450,6 +456,7 @@ svg {
 
 .dock-area {
   flex: none;
+  width: 100%;
   display: flex;
   justify-content: center;
 }
@@ -909,6 +916,13 @@ input[type="range"]::-moz-range-thumb {
   .principal {
     padding: 0 10px 10px;
     gap: 10px;
+    justify-content: flex-start;
+  }
+
+  .palco {
+    flex: 1;
+    aspect-ratio: auto;
+    max-height: none;
   }
 
   .dock {
