@@ -49,8 +49,6 @@ const estado = {
   saidaAudio: lerSaidaSalva(), // id do dispositivo de saída ('' = padrão)
 };
 
-const tilesOcultos = new Set();
-
 // Cliente do LiveKit (carregado pelo index.html).
 const LK = typeof LivekitClient !== 'undefined' ? LivekitClient : null;
 
@@ -125,6 +123,7 @@ function iniciarMedidor(chave, nome, track) {
 
     const dados = new Uint8Array(analisador.fftSize);
     const id = setInterval(() => {
+      if (el.painelAudio.hidden) return; // painel fechado: não gasta processamento
       analisador.getByteTimeDomainData(dados);
       let pico = 0;
       for (const v of dados) pico = Math.max(pico, Math.abs(v - 128));
@@ -316,23 +315,48 @@ async function listarSaidas(pedirPermissao = false) {
 const telaSuportada = !!navigator.mediaDevices?.getDisplayMedia;
 
 // Perfis de compartilhamento. A qualidade real também depende do PC e da conexão.
+// 'maintain-framerate' = se a internet apertar, baixa a resolução e mantém a fluidez.
+// 'maintain-resolution' = se a internet apertar, baixa os quadros e mantém a nitidez.
 const PERFIS_TELA = {
   fluido: {
     resolution: { width: 1280, height: 720, frameRate: 30 },
     contentHint: 'motion',
-    encoding: { maxBitrate: 2_500_000, maxFramerate: 30 },
+    degradacao: 'maintain-framerate',
+    encoding: { maxBitrate: 3_000_000, maxFramerate: 30, priority: 'high' },
   },
   equilibrado: {
     resolution: { width: 1920, height: 1080, frameRate: 30 },
     contentHint: 'detail',
-    encoding: { maxBitrate: 5_000_000, maxFramerate: 30 },
+    degradacao: 'maintain-resolution',
+    encoding: { maxBitrate: 6_000_000, maxFramerate: 30, priority: 'high' },
   },
   qualidade: {
     resolution: { width: 1920, height: 1080, frameRate: 60 },
     contentHint: 'motion',
-    encoding: { maxBitrate: 8_000_000, maxFramerate: 60 },
+    degradacao: 'maintain-framerate',
+    encoding: { maxBitrate: 10_000_000, maxFramerate: 60, priority: 'high' },
   },
 };
+
+// A prévia da SUA tela começa oculta (economiza placa de vídeo de quem transmite).
+// Para ela já começar aberta, troque true por false.
+const PREVIA_LOCAL_OCULTA = true;
+
+function lerPerfilSalvo() {
+  try {
+    return localStorage.getItem('basement.perfilTela') || '';
+  } catch {
+    return '';
+  }
+}
+
+function salvarPerfil(valor) {
+  try {
+    localStorage.setItem('basement.perfilTela', valor);
+  } catch {
+    /* sem armazenamento: tudo bem */
+  }
+}
 
 // ---------- Trocar de tela ----------
 function mostrarTela(nome) {
@@ -412,7 +436,6 @@ function adicionarTile(participante, fonte, track) {
   const local = !!sala && participante === sala.localParticipant;
   const ehCamera = fonte === LK.Track.Source.Camera;
   const chave = chaveTile(participante, fonte);
-  if (tilesOcultos.has(chave)) return;
 
   const quadro = document.createElement('div');
   quadro.className =
@@ -457,12 +480,45 @@ function adicionarTile(participante, fonte, track) {
     return botao;
   };
 
-  const btnOcultar = criarBotaoIcone('eye', 'Ocultar este vídeo só para você', () => {
-    video.hidden = !video.hidden;
-    btnOcultar.innerHTML = criarIcone(video.hidden ? 'eyeOff' : 'eye');
-    btnOcultar.title = video.hidden ? 'Mostrar este vídeo novamente' : 'Ocultar este vídeo só para você';
+  let oculto = false;
+
+  const btnOcultar = criarBotaoIcone('eye', 'Ocultar este vídeo só para você', () => definirOculto(!oculto));
+
+  // Aviso que aparece no lugar do vídeo, sempre com um botão para voltar.
+  const aviso = document.createElement('div');
+  aviso.className = 'tile-oculto';
+  aviso.hidden = true;
+  aviso.innerHTML = criarIcone('eyeOff') + '<span>Vídeo oculto só para você</span>';
+  const btnMostrar = document.createElement('button');
+  btnMostrar.type = 'button';
+  btnMostrar.className = 'tile-mostrar';
+  btnMostrar.textContent = 'Mostrar vídeo';
+  btnMostrar.addEventListener('click', () => definirOculto(false));
+  aviso.appendChild(btnMostrar);
+  quadro.insertBefore(aviso, rotulo);
+
+  function definirOculto(valor) {
+    oculto = valor;
+    quadro.classList.toggle('oculto', valor);
+    aviso.hidden = !valor;
+    video.style.visibility = valor ? 'hidden' : '';
+
+    if (valor) video.pause();
+    else video.play().catch(() => {});
+
+    btnOcultar.innerHTML = criarIcone(valor ? 'eyeOff' : 'eye');
+    btnOcultar.title = valor ? 'Mostrar este vídeo novamente' : 'Ocultar este vídeo só para você';
     btnOcultar.setAttribute('aria-label', btnOcultar.title);
-  });
+
+    // Vídeo de outra pessoa: enquanto está oculto, o navegador para de baixá-lo.
+    if (!local) {
+      try {
+        participante.getTrackPublication?.(fonte)?.setEnabled(!valor);
+      } catch (e) {
+        console.warn('Não consegui pausar o recebimento do vídeo:', e);
+      }
+    }
+  }
 
   const qualidadeWrap = document.createElement('label');
   qualidadeWrap.className = 'tile-qualidade-wrap';
@@ -552,6 +608,8 @@ function adicionarTile(participante, fonte, track) {
   el.palco.appendChild(quadro);
   tiles.set(chave, { quadro, track, video });
   atualizarPalco();
+
+  if (local && !ehCamera && PREVIA_LOCAL_OCULTA) definirOculto(true);
 }
 
 function removerTile(participante, fonte) {
@@ -721,7 +779,7 @@ async function conectarLivekit() {
     const { url, token } = await resposta.json();
 
     sala = new LK.Room({
-      adaptiveStream: true,
+      adaptiveStream: { pixelDensity: 'screen' }, // nitidez total em telas de alta resolução
       dynacast: true,
       publishDefaults: {
         // H.264 usa a placa de vídeo para codificar (bem mais leve para o PC
@@ -801,6 +859,15 @@ async function ligarTela() {
     const perfilEscolhido = el.perfilTela?.value || 'equilibrado';
     const perfil = PERFIS_TELA[perfilEscolhido] || PERFIS_TELA.equilibrado;
 
+    const opcoesPublicacao = {
+      screenShareEncoding: perfil.encoding,
+      degradationPreference: perfil.degradacao,
+    };
+    // Som da tela em estéreo e com mais qualidade (jogo, música).
+    if (LK.AudioPresets?.musicHighQualityStereo) {
+      opcoesPublicacao.audioPreset = LK.AudioPresets.musicHighQualityStereo;
+    }
+
     await sala.localParticipant.setScreenShareEnabled(
       true,
       {
@@ -813,9 +880,7 @@ async function ligarTela() {
         resolution: perfil.resolution,
         contentHint: perfil.contentHint,
       },
-      {
-        screenShareEncoding: perfil.encoding,
-      }
+      opcoesPublicacao
     );
 
     // Avisa se a tela subiu sem som (o navegador só manda se você marcar).
@@ -894,6 +959,12 @@ el.btnTela.addEventListener('click', ligarTela);
 el.btnParar.addEventListener('click', pararTela);
 
 el.btnSala.addEventListener('click', alternarModoSala);
+
+if (el.perfilTela) {
+  const salvo = lerPerfilSalvo();
+  el.perfilTela.value = PERFIS_TELA[salvo] ? salvo : 'qualidade';
+  el.perfilTela.addEventListener('change', () => salvarPerfil(el.perfilTela.value));
+}
 
 // ---------- Controles de áudio ----------
 el.volumeGeral.addEventListener('input', () => {

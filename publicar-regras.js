@@ -48,7 +48,7 @@ async function registrarComandos() {
       Routes.applicationGuildCommands(
         ID_APLICACAO,
         ID_SERVIDOR
-      ),
+      ),  
       { body: comandos }
     );
 

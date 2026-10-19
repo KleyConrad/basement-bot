@@ -324,10 +324,8 @@ svg {
   top: 12px;
   padding: 4px 11px;
   border-radius: 999px;
-  background: rgba(10, 12, 16, .62);
+  background: rgba(10, 12, 16, .78);
   border: 1px solid rgba(255, 255, 255, .08);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   color: #fff;
   font-size: .78rem;
   pointer-events: none;
@@ -342,10 +340,8 @@ svg {
   gap: 4px;
   padding: 5px;
   border-radius: 999px;
-  background: rgba(10, 12, 16, .72);
+  background: rgba(10, 12, 16, .9);
   border: 1px solid rgba(255, 255, 255, .08);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   opacity: 0;
   transform: translateY(4px);
   transition: opacity .18s, transform .18s;
@@ -353,9 +349,45 @@ svg {
 
 .tile:hover .tile-ferramentas,
 .tile:focus-within .tile-ferramentas,
+.tile.oculto .tile-ferramentas,
 .tile:fullscreen .tile-ferramentas {
   opacity: 1;
   transform: none;
+}
+
+/* Aviso no lugar do vídeo oculto (com botão para voltar) */
+.tile-oculto {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #0b0d11;
+  color: var(--suave);
+  font-size: .9rem;
+  text-align: center;
+}
+
+.tile-oculto svg {
+  width: 30px;
+  height: 30px;
+}
+
+.tile-mostrar {
+  padding: 9px 18px;
+  border: 1px solid var(--borda);
+  border-radius: 999px;
+  background: var(--painel-2);
+  color: var(--texto);
+  font: inherit;
+  cursor: pointer;
+  transition: background .15s;
+}
+
+.tile-mostrar:hover {
+  background: #1f2430;
 }
 
 @media (hover: none) {
