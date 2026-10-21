@@ -40,6 +40,10 @@ iniciarLogs(client, ID_SERVIDOR);
 const iniciarTransmissao = require('./transmissao');
 iniciarTransmissao(client);
 
+// Comando !voice (fala o texto na call).
+const iniciarFala = require('./falar');
+iniciarFala(client);
+
 // Site Basement Screen Share.
 const iniciarWeb = require('./web');
 iniciarWeb(client);
