@@ -81,7 +81,8 @@ const SIGLAS = {
   pt: 'vai toma no cu petista',
   cpk: 'cabeça de pika',
   interpol: 'interpol, a isa mandou um beijo na nadega esquerda',
-  yuta: 'yuta o bumbum guloso',
+  yuta: 'yuta, o bumbum guloso',
+  aki: 'aki, bumbum guloso',
 };
 
 const REGEX_SIGLAS = new RegExp(
