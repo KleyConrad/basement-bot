@@ -23,7 +23,7 @@ const {
 const googleTTS = require('google-tts-api');
 
 // ---------- Configurações (pode mudar aqui) ----------
-const IDIOMA = 'pt-BR';            // idioma da voz
+const IDIOMA = 'pt';               // idioma da voz (português)
 const ANUNCIAR_NOME = true;        // fala "Fulano disse ..." quando muda quem está falando
 const LIMITE_MENSAGEM = 1500;      // ignora mensagens maiores que isso (igual ao bot Rust)
 const LIMITE_TEXTO = 400;          // máximo de caracteres falados por mensagem
