@@ -8,7 +8,7 @@
 // O bot também sai sozinho quando não sobra nenhuma pessoa na call.
 
 const { PassThrough } = require('stream');
-const { PermissionFlagsBits } = require('discord.js');
+const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -28,6 +28,7 @@ const ANUNCIAR_NOME = true;        // fala "Fulano disse ..." quando muda quem e
 const LIMITE_MENSAGEM = 1500;      // ignora mensagens maiores que isso (igual ao bot Rust)
 const LIMITE_TEXTO = 400;          // máximo de caracteres falados por mensagem
 const MAX_FILA = 10;               // máximo de mensagens esperando para falar
+const COR = '#008CFF';             // mesma borda azul do !tempo e !transmitir
 
 const REGEX_COMANDO = /^!voice(?:\s+([\s\S]*))?$/i;
 const REGEX_SAIR = /^!voicequit$/i;
@@ -50,39 +51,21 @@ const SIGLAS = {
   mto: 'muito',
   q: 'que',
   n: 'não',
-  nn: 'não',
-  s: 'sim',
-  ss: 'sim',
   td: 'tudo',
   msm: 'mesmo',
   hj: 'hoje',
   sdds: 'saudades',
-  sdd: 'saudade',
   flw: 'falou',
   vlw: 'valeu',
   pfv: 'por favor',
   pf: 'por favor',
   tmj: 'tamo junto',
-  slc: 'se loco',
-  slk: 'se loco',
-  olc: 'oloco',
-  olk: 'oloco',
+  slc: 'sério',
   cmg: 'comigo',
   ctz: 'certeza',
   kd: 'cadê',
   qnd: 'quando',
   ngm: 'ninguém',
-  sv: 'salve',
-  fml: 'familia',
-  cz: 'cuzão',
-  pnc: 'pau no cu',
-  tmnc: 'toma no cu',
-  fdp: 'filho da puta',
-  pt: 'vai toma no cu petista',
-  cpk: 'cabeça de pika',
-  interpol: 'interpol, a isa mandou um beijo na nadega esquerda',
-  yuta: 'yuta, o bumbum guloso',
-  aki: 'aki, bumbum guloso',
 };
 
 const REGEX_SIGLAS = new RegExp(
@@ -347,9 +330,28 @@ function enfileirar(sessao, message, textoCru) {
 
 // ---------- Comandos ----------
 
+// Embed no mesmo estilo do !transmitir.
+function embedVoz(linhas, campos = []) {
+  const embed = new EmbedBuilder()
+    .setColor(COR)
+    .setTitle('🎙️ Fala por texto')
+    .setDescription(linhas.join('\n'))
+    .setFooter({ text: 'Basement' })
+    .setTimestamp();
+
+  if (campos.length > 0) embed.addFields(campos);
+  return embed;
+}
+
+function responderEmbed(message, embed) {
+  return message.reply({
+    embeds: [embed],
+    allowedMentions: { repliedUser: false },
+  });
+}
+
 async function tratarVoice(message, argumentos) {
-  const responder = (texto) =>
-    message.reply({ content: texto, allowedMentions: { repliedUser: false } });
+  const responder = (...linhas) => responderEmbed(message, embedVoz(linhas));
 
   const guild = message.guild;
   const canalAutor = message.member?.voice?.channel;
@@ -357,7 +359,9 @@ async function tratarVoice(message, argumentos) {
 
   if (!canalAutor) {
     return responder(
-      '🔇 Você precisa estar em um **canal de voz** para usar o `!voice`.'
+      'Você precisa estar em um **canal de voz** para usar o `!voice`.',
+      '',
+      'Entre em uma call e envie `!voice` novamente.'
     );
   }
 
@@ -365,7 +369,11 @@ async function tratarVoice(message, argumentos) {
   const canalDoBot = guild.members.me?.voice?.channelId ?? sessaoAtual?.canalId;
 
   if (sessaoAtual && canalDoBot && canalDoBot !== canalAutor.id) {
-    return responder('Já estou em outra call. Entre nela ou espere eu sair.');
+    return responder(
+      'Já estou em outra call.',
+      '',
+      'Entre nela ou espere eu sair.'
+    );
   }
 
   const permissoes = canalAutor.permissionsFor(guild.members.me);
@@ -377,7 +385,9 @@ async function tratarVoice(message, argumentos) {
     ])
   ) {
     return responder(
-      'Eu não tenho permissão para **entrar e falar** nessa call. Confira as permissões do bot.'
+      'Eu não tenho permissão para **entrar e falar** nessa call.',
+      '',
+      'Confira as permissões **Conectar** e **Falar** do bot.'
     );
   }
 
@@ -387,15 +397,30 @@ async function tratarVoice(message, argumentos) {
     await sessao.pronta;
   } catch (erro) {
     console.error('[voice] Não consegui entrar na call:', erro);
-    return responder('Não consegui entrar na call. Tente de novo em instantes.');
+    return responder(
+      'Não consegui entrar na call.',
+      '',
+      'Tente de novo em instantes.'
+    );
   }
 
   const jaAtivo = sessao.usuarios.get(message.author.id) === message.channelId;
   sessao.usuarios.set(message.author.id, message.channelId);
 
   if (!jaAtivo) {
-    await responder(
-      '🔊 Entrei na call! A partir de agora eu falo o que você escrever **neste canal**.\nPara eu sair: `!voicequit`'
+    await responderEmbed(
+      message,
+      embedVoz(
+        [
+          `Entrei em **${canalAutor.name}**.`,
+          '',
+          '**Como usar**',
+          '1. Escreva normalmente **neste canal de texto**.',
+          '2. Eu falo na call o que você escrever.',
+          '3. Para eu sair, envie `!voicequit`.',
+        ],
+        [{ name: '🔊 Canal de voz', value: canalAutor.name, inline: true }]
+      )
     );
   }
 
@@ -408,18 +433,25 @@ async function tratarVoice(message, argumentos) {
 }
 
 async function tratarSair(message) {
-  const responder = (texto) =>
-    message.reply({ content: texto, allowedMentions: { repliedUser: false } });
+  const responder = (...linhas) => responderEmbed(message, embedVoz(linhas));
 
   const sessao = sessoes.get(message.guild.id);
 
-  if (!sessao) return responder('Eu não estou em nenhuma call.');
+  if (!sessao) {
+    return responder(
+      'Eu não estou em nenhuma call.',
+      '',
+      'Entre em uma call e envie `!voice` para me chamar.'
+    );
+  }
 
   const canalAutor = message.member?.voice?.channelId;
   const canalDoBot = message.guild.members.me?.voice?.channelId ?? sessao.canalId;
 
   if (canalAutor !== canalDoBot) {
-    return responder('Você precisa estar na mesma call que eu para me mandar sair.');
+    return responder(
+      'Você precisa estar na **mesma call** que eu para me mandar sair.'
+    );
   }
 
   encerrarSessao(sessao);
