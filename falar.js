@@ -80,7 +80,8 @@ const SIGLAS = {
   fdp: 'filho da puta',
   pt: 'vai toma no cu petista',
   cpk: 'cabeça de pika',
-  interpol: 'a isa mandou um beijo na nadega esquerda',
+  interpol: 'interpol, a isa mandou um beijo na nadega esquerda',
+  yuta: 'yuta o bumbum guloso',
 };
 
 const REGEX_SIGLAS = new RegExp(
