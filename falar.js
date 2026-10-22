@@ -79,6 +79,8 @@ const SIGLAS = {
   tmnc: 'toma no cu',
   fdp: 'filho da puta',
   pt: 'vai toma no cu petista',
+  cpk: 'cabeça de pika',
+  interpol: 'a isa mandou um beijo na nadega esquerda',
 };
 
 const REGEX_SIGLAS = new RegExp(
