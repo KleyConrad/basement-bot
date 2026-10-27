@@ -36,6 +36,9 @@ const el = {
   painelAudio: $('painelAudio'),
   painelQualidade: $('painelQualidade'),
   painelPessoas: $('painelPessoas'),
+  btnDeitar: $('btnDeitar'),
+  volumeGeralPainel: $('volumeGeralPainel'),
+  itemQualidade: $('itemQualidade'),
 };
 
 const estado = {
@@ -66,6 +69,7 @@ const ICONES = {
   logIn: '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>',
   logOut: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
   refresh: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+  rotacionar: '<rect x="3" y="3" width="10" height="15" rx="2"/><path d="M18 7a7 7 0 0 1 0 10"/><path d="M20 15l-2 2-2-2"/>',
 };
 
 function icone(nome) {
@@ -74,6 +78,9 @@ function icone(nome) {
 
 // Troca o ícone e o texto de um botão da barra (o texto só aparece em telas largas).
 function definirBotao(botao, nomeIcone, texto, dica) {
+  const chave = nomeIcone + '|' + texto + '|' + (dica || '');
+  if (botao._chave === chave) return;
+  botao._chave = chave;
   botao.innerHTML = `${icone(nomeIcone)}<span class="btn-txt">${texto}</span>`;
   botao.title = dica || texto;
   botao.setAttribute('aria-label', dica || texto);
@@ -195,7 +202,7 @@ function adicionarAudio(participante, fonte, track) {
   const elemento = track.attach();
   elemento.autoplay = true;
   contAudios.appendChild(elemento);
-  audios.set(chaveTile(participante, fonte), { track, elemento });
+  audios.set(chaveTile(participante, fonte), { track, elemento, participante });
 
   aplicarSaida(elemento);
   track.setVolume(volumeEfetivo(participante.identity));
@@ -206,7 +213,27 @@ function adicionarAudio(participante, fonte, track) {
     dizerAudio(`o navegador bloqueou o play (${erro.name}). Clique na página.`);
     mostrarErro('O navegador bloqueou o som. Clique em qualquer lugar da página para ativar.');
   });
-  iniciarMedidor(chaveTile(participante, fonte), nomeDe(participante), track);
+  if (!el.painelAudio.hidden) {
+    iniciarMedidor(chaveTile(participante, fonte), nomeDe(participante), track);
+  }
+}
+
+// O medidor de nível do som só liga enquanto o menu de áudio está aberto
+// (fechado, ele não gasta nada de processador nem bateria).
+function ligarMedidores() {
+  for (const [chave, item] of audios) {
+    if (!medidores.has(chave)) {
+      iniciarMedidor(chave, nomeDe(item.participante), item.track);
+    }
+  }
+}
+
+function desligarMedidores() {
+  for (const chave of [...medidores.keys()]) pararMedidor(chave);
+  if (ctxNivel) {
+    ctxNivel.close().catch(() => {});
+    ctxNivel = null;
+  }
 }
 
 function removerAudio(participante, fonte) {
@@ -253,7 +280,12 @@ function atualizarControlesAudio() {
     semSom ? 'Ativar o som' : 'Silenciar a transmissão'
   );
   el.btnMudo.classList.toggle('ativo', semSom);
-  el.volumeGeral.style.setProperty('--p', (estado.mudo ? 0 : estado.volumeGeral * 100) + '%');
+  const pct = estado.mudo ? 0 : estado.volumeGeral * 100;
+  const valor = String(Math.round(estado.volumeGeral * 100));
+  el.volumeGeral.value = valor;
+  el.volumeGeral.style.setProperty('--p', pct + '%');
+  el.volumeGeralPainel.value = valor;
+  el.volumeGeralPainel.style.setProperty('--p', pct + '%');
 }
 
 // Lista as saídas de áudio (caixas, fones...) para o seletor.
@@ -313,6 +345,7 @@ async function listarSaidas(pedirPermissao = false) {
 
 // Celulares normalmente não permitem compartilhar tela.
 const telaSuportada = !!navigator.mediaDevices?.getDisplayMedia;
+if (el.itemQualidade) el.itemQualidade.hidden = !telaSuportada;
 
 // Perfis de compartilhamento. A qualidade real também depende do PC e da conexão.
 // 'maintain-framerate' = se a internet apertar, baixa a resolução e mantém a fluidez.
@@ -360,6 +393,7 @@ function salvarPerfil(valor) {
 
 // ---------- Trocar de tela ----------
 function mostrarTela(nome) {
+  if (nome !== 'app' && estaDeitado()) levantarTela();
   el.telaLogin.hidden = nome !== 'login';
   el.telaSemCall.hidden = nome !== 'semcall';
   el.telaApp.hidden = nome !== 'app';
@@ -425,7 +459,33 @@ function chaveTile(participante, fonte) {
 function atualizarPalco() {
   el.palcoTexto.hidden = tiles.size > 0;
   el.palco.classList.toggle('ativo', tiles.size > 0);
+  atualizarWakeLock();
 }
+
+// Mantém a tela do celular acesa enquanto há transmissão aparecendo.
+let wakeLock = null;
+let wakeOcupado = false;
+
+async function atualizarWakeLock() {
+  if (!navigator.wakeLock || wakeOcupado) return;
+  wakeOcupado = true;
+  try {
+    const precisa = tiles.size > 0 && !document.hidden;
+    if (precisa && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!precisa && wakeLock) {
+      const atual = wakeLock;
+      wakeLock = null;
+      await atual.release();
+    }
+  } catch {
+    wakeLock = null; // o aparelho não deixou: tudo bem
+  }
+  wakeOcupado = false;
+}
+
+document.addEventListener('visibilitychange', atualizarWakeLock);
 
 function adicionarTile(participante, fonte, track) {
   if (!LK || track.kind !== LK.Track.Kind.Video) return;
@@ -545,6 +605,12 @@ function adicionarTile(participante, fonte, track) {
   ferramentas.appendChild(qualidadeWrap);
 
   criarBotaoIcone('fullscreen', 'Abrir em tela cheia', async () => {
+    // Sem tela cheia do navegador (iPhone) ou com a tela deitada pelo botão,
+    // o quadro é ampliado dentro do próprio app.
+    if (estaDeitado() || !quadro.requestFullscreen || quadro.classList.contains('expandido')) {
+      quadro.classList.toggle('expandido');
+      return;
+    }
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
       else await quadro.requestFullscreen();
@@ -604,6 +670,18 @@ function adicionarTile(participante, fonte, track) {
     ferramentas.appendChild(volume);
   }
   quadro.appendChild(ferramentas);
+
+  // No celular as ferramentas ficam escondidas: tocar no vídeo mostra por 3,5 segundos.
+  let relogioFerramentas = null;
+  const mostrarFerramentas = () => {
+    quadro.classList.add('ferr-ativa');
+    clearTimeout(relogioFerramentas);
+    relogioFerramentas = setTimeout(() => quadro.classList.remove('ferr-ativa'), 3500);
+  };
+  quadro.addEventListener('pointerdown', (ev) => {
+    if (ev.pointerType === 'touch') mostrarFerramentas();
+  });
+  if (window.matchMedia('(hover: none)').matches) mostrarFerramentas();
 
   el.palco.appendChild(quadro);
   tiles.set(chave, { quadro, track, video });
@@ -967,12 +1045,15 @@ if (el.perfilTela) {
 }
 
 // ---------- Controles de áudio ----------
-el.volumeGeral.addEventListener('input', () => {
-  estado.volumeGeral = Number(el.volumeGeral.value) / 100;
+function aoMudarVolume(ev) {
+  estado.volumeGeral = Number(ev.target.value) / 100;
   if (estado.volumeGeral > 0) estado.mudo = false;
   atualizarControlesAudio();
   aplicarVolumes();
-});
+}
+
+el.volumeGeral.addEventListener('input', aoMudarVolume);
+el.volumeGeralPainel.addEventListener('input', aoMudarVolume);
 
 el.btnMudo.addEventListener('click', () => {
   estado.mudo = !estado.mudo;
@@ -1014,6 +1095,7 @@ const menus = [
 function fecharMenus(exceto) {
   for (const [botao, painel] of menus) {
     if (painel === exceto) continue;
+    if (painel === el.painelAudio && !painel.hidden) desligarMedidores();
     painel.hidden = true;
     botao.classList.remove('aberto');
     botao.setAttribute('aria-expanded', 'false');
@@ -1028,15 +1110,127 @@ for (const [botao, painel] of menus) {
     painel.hidden = !abrir;
     botao.classList.toggle('aberto', abrir);
     botao.setAttribute('aria-expanded', String(abrir));
-    if (abrir && painel === el.painelAudio) listarSaidas(false);
+    if (painel === el.painelAudio) {
+      if (abrir) {
+        listarSaidas(false);
+        ligarMedidores();
+      } else {
+        desligarMedidores();
+      }
+    }
   });
   painel.addEventListener('click', (ev) => ev.stopPropagation());
 }
 
 document.addEventListener('click', () => fecharMenus(null));
 document.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Escape') fecharMenus(null);
+  if (ev.key === 'Escape') {
+    fecharMenus(null);
+    limparExpandidos();
+  }
 });
+
+// ---------- Tela deitada (celular) ----------
+// Jeito 1 (Android/Chrome): tela cheia + travar na horizontal, de verdade.
+// Jeito 2 (iPhone e outros, que não deixam travar): o app inteiro gira 90° pelo CSS.
+const raiz = document.documentElement;
+const deitar = { travado: false, entrouTelaCheia: false };
+
+function estaDeitado() {
+  return raiz.classList.contains('deitado') || deitar.travado;
+}
+
+function limparExpandidos() {
+  for (const item of tiles.values()) item.quadro.classList.remove('expandido');
+}
+
+// Liga a classe "compacto" (layout com a barra ao lado) quando a tela está deitada.
+function atualizarLayout() {
+  // Se o aparelho girou de verdade, o giro pelo CSS não vale mais.
+  if (raiz.classList.contains('deitado') && window.innerWidth > window.innerHeight) {
+    raiz.classList.remove('deitado');
+    limparExpandidos();
+  }
+
+  const paisagemBaixa = window.innerWidth > window.innerHeight && window.innerHeight < 500;
+  raiz.classList.toggle('compacto', raiz.classList.contains('deitado') || paisagemBaixa);
+
+  const ativo = estaDeitado();
+  el.btnDeitar.classList.toggle('ativo', ativo);
+  el.btnDeitar.setAttribute('aria-pressed', String(ativo));
+  definirBotao(
+    el.btnDeitar,
+    'rotacionar',
+    ativo ? 'Voltar ao normal' : 'Deitar a tela',
+    ativo ? 'Voltar a tela em pé' : 'Deitar a tela'
+  );
+}
+
+async function deitarTela() {
+  try {
+    if (!document.fullscreenElement && raiz.requestFullscreen) {
+      await raiz.requestFullscreen({ navigationUI: 'hide' });
+      deitar.entrouTelaCheia = true;
+    }
+    if (screen.orientation && screen.orientation.lock) {
+      await screen.orientation.lock('landscape');
+      deitar.travado = true;
+    }
+  } catch {
+    /* o navegador não deixou travar: usa o jeito 2 */
+  }
+
+  if (!deitar.travado) {
+    if (window.innerHeight > window.innerWidth) {
+      raiz.classList.add('deitado');
+    } else {
+      mostrarErro('Sua tela já está deitada.');
+    }
+  }
+
+  atualizarLayout();
+}
+
+async function levantarTela() {
+  raiz.classList.remove('deitado');
+  limparExpandidos();
+
+  if (deitar.travado) {
+    try { screen.orientation.unlock(); } catch { /* sem problema */ }
+    deitar.travado = false;
+  }
+
+  const sairDaTelaCheia = deitar.entrouTelaCheia && !!document.fullscreenElement;
+  deitar.entrouTelaCheia = false;
+  atualizarLayout();
+
+  if (sairDaTelaCheia) {
+    try { await document.exitFullscreen(); } catch { /* sem problema */ }
+  }
+}
+
+el.btnDeitar.addEventListener('click', () => {
+  if (estaDeitado()) levantarTela();
+  else deitarTela();
+});
+
+// Saiu da tela cheia por fora (gesto de voltar, por exemplo): desfaz tudo.
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && deitar.entrouTelaCheia) levantarTela();
+});
+
+let layoutAgendado = false;
+function aoGirarOuRedimensionar() {
+  if (layoutAgendado) return;
+  layoutAgendado = true;
+  requestAnimationFrame(() => {
+    layoutAgendado = false;
+    atualizarLayout();
+  });
+}
+window.addEventListener('resize', aoGirarOuRedimensionar);
+window.addEventListener('orientationchange', aoGirarOuRedimensionar);
+atualizarLayout();
 
 el.btnRecarregar.addEventListener('click', () => {
   location.reload();
@@ -1047,7 +1241,21 @@ function transmite(participante) {
   return participante.isCameraEnabled || participante.isScreenShareEnabled;
 }
 
+let desenhoAgendado = false;
+let ultimaAssinaturaLista = null;
+
+// Vários eventos do vídeo chegam juntos; aqui eles viram um único desenho por quadro.
 function desenhar() {
+  if (desenhoAgendado) return;
+  desenhoAgendado = true;
+  const agendar = document.hidden ? (f) => setTimeout(f, 100) : requestAnimationFrame;
+  agendar(() => {
+    desenhoAgendado = false;
+    desenharAgora();
+  });
+}
+
+function desenharAgora() {
   const { servidorOnline, midia, ocupado } = estado;
   const online = servidorOnline && midia === 'online';
   const local = sala ? sala.localParticipant : null;
@@ -1080,7 +1288,7 @@ function desenhar() {
     'Compartilhar tela',
     telaSuportada ? 'Compartilhar tela' : 'Este navegador não permite compartilhar a tela.'
   );
-  el.btnTela.hidden = tela; // enquanto compartilha, aparece o botão de parar
+  el.btnTela.hidden = tela || !telaSuportada; // some enquanto compartilha (aparece o parar) e onde não existe (celular)
 
   el.btnParar.disabled = !online || ocupado || !tela || estado.espectador;
   el.btnParar.hidden = !tela;
@@ -1122,11 +1330,17 @@ function desenhar() {
   }
 
   // A lista permanece visível no modo espectador; nesse modo, ocultamos você.
-  el.lista.innerHTML = '';
-
   const todos = sala && midia === 'online'
     ? [...(estado.espectador ? [] : [sala.localParticipant]), ...sala.remoteParticipants.values()]
     : [];
+
+  // Só reconstrói a lista de pessoas se algo nela mudou.
+  const assinatura = todos
+    .map((p) => `${p.identity}|${nomeDe(p)}|${transmite(p) ? 1 : 0}|${sala && p === sala.localParticipant ? 1 : 0}`)
+    .join(',');
+  const listaMudou = assinatura !== ultimaAssinaturaLista;
+  ultimaAssinaturaLista = assinatura;
+  if (listaMudou) el.lista.innerHTML = '';
 
   if (el.listaContagem) {
     el.listaContagem.textContent = String(todos.length);
@@ -1137,14 +1351,14 @@ function desenhar() {
     const vazio = document.createElement('li');
     vazio.className = 'vazio';
     vazio.textContent = 'Ninguém conectado';
-    el.lista.appendChild(vazio);
+    if (listaMudou) el.lista.appendChild(vazio);
     el.transmissor.textContent = 'ninguém';
     el.transmissorWrap.hidden = true;
     if (el.avisoEspectador) el.avisoEspectador.hidden = !estado.espectador;
     return;
   }
 
-  for (const p of todos) {
+  for (const p of (listaMudou ? todos : [])) {
     const item = document.createElement('li');
     const info = document.createElement('span');
     info.className = 'membro-info';

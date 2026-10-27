@@ -32,8 +32,11 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   background:
-    radial-gradient(ellipse at 50% -10%, rgba(60, 100, 170, .18), transparent 55%) no-repeat fixed,
+    radial-gradient(ellipse at 50% -10%, rgba(60, 100, 170, .18), transparent 55%) no-repeat,
     var(--fundo);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior: none;
   color: var(--texto);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 15px;
@@ -55,6 +58,15 @@ a {
 
 button {
   cursor: pointer;
+}
+
+/* Toque mais rápido e sem o "flash" azul do celular */
+button,
+select,
+a,
+input[type="range"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 button:focus-visible,
@@ -391,10 +403,34 @@ svg {
 }
 
 @media (hover: none) {
-  .tile-ferramentas {
+  .tile:hover .tile-ferramentas {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  .tile.ferr-ativa .tile-ferramentas,
+  .tile.oculto .tile-ferramentas,
+  .tile.expandido .tile-ferramentas,
+  .tile:focus-within .tile-ferramentas,
+  .tile:fullscreen .tile-ferramentas {
     opacity: 1;
     transform: none;
   }
+}
+
+/* Quadro "ampliado": usado quando a tela cheia do navegador não existe (iPhone)
+   ou quando a tela está deitada pelo botão. */
+.tile.expandido {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  border: 0;
+  border-radius: 0;
+}
+
+.tile.expandido .tile-ferramentas {
+  opacity: 1;
+  transform: none;
 }
 
 .tile-icon-btn {
@@ -476,14 +512,12 @@ svg {
   max-width: min(560px, calc(100% - 48px));
   padding: 10px 16px;
   border-radius: 12px;
-  background: rgba(36, 16, 20, .94);
+  background: rgba(36, 16, 20, .97);
   border: 1px solid rgba(255, 107, 122, .35);
   color: #ffb9c0;
   font-size: .85rem;
   text-align: center;
   cursor: pointer;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   box-shadow: 0 10px 30px rgba(0, 0, 0, .4);
 }
 
@@ -504,9 +538,7 @@ svg {
   padding: 7px;
   border: 1px solid var(--borda);
   border-radius: 999px;
-  background: rgba(17, 20, 27, .85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(17, 20, 27, .95);
 }
 
 .dock-sep {
@@ -939,22 +971,100 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* ============================================================
-   Telas menores
+   Celular e telas de toque
    ============================================================ */
 
+/* Botão de deitar a tela: só aparece em aparelhos de toque */
+.so-toque {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .so-toque {
+    display: inline-flex;
+  }
+}
+
+/* Volume dentro do menu de áudio (usado no celular, onde a barra some da dock) */
+.painel-volume {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.painel-volume input[type="range"] {
+  width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ponto-vivo {
+    animation: none;
+  }
+}
+
+/* Margens de segurança (notch e barra de gestos) */
+.app {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.login {
+  padding-top: max(24px, env(safe-area-inset-top));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+}
+
 @media (max-width: 720px) {
+  body {
+    font-size: 14px;
+  }
+
   .topo {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     width: 100%;
-    padding: 0 10px;
+    height: 48px;
+    padding: 0 12px;
+    gap: 10px;
+  }
+
+  .logo {
+    font-size: 1rem;
   }
 
   .canal {
+    justify-self: start;
+    font-size: .82rem;
+  }
+
+  .canal svg {
     display: none;
   }
 
-  .status {
+  .canal-nome {
+    max-width: 14ch;
+  }
+
+  .ao-vivo {
+    min-width: 0;
+    margin-left: 2px;
+    padding: 2px 8px;
+    font-size: .72rem;
+  }
+
+  #transmissor {
+    display: inline-block;
+    max-width: 12ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .status,
+  .conta-nome {
     display: none;
+  }
+
+  .sair {
+    width: 40px;
+    height: 40px;
   }
 
   .principal {
@@ -967,31 +1077,260 @@ input[type="range"]::-moz-range-thumb {
     flex: 1;
     aspect-ratio: auto;
     max-height: none;
+    border-radius: 16px;
+  }
+
+  .palco.ativo {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .tile {
+    border-radius: 14px;
+  }
+
+  .tile .rotulo {
+    left: 8px;
+    top: 8px;
+    padding: 3px 9px;
+    font-size: .72rem;
+  }
+
+  .tile-ferramentas {
+    right: 8px;
+    bottom: 8px;
+    gap: 2px;
+    padding: 4px;
+  }
+
+  .tile-icon-btn {
+    width: 38px;
+    height: 38px;
+  }
+
+  .tile-volume input[type="range"] {
+    width: 64px;
+  }
+
+  .tile-qualidade {
+    font-size: .8rem;
+  }
+
+  .erro {
+    top: 8px;
+    max-width: calc(100% - 24px);
+  }
+
+  /* Barra de controles ocupa a largura toda, sem rolagem lateral */
+  .dock-area {
+    padding: 0;
   }
 
   .dock {
-    overflow-x: auto;
-    scrollbar-width: none;
+    width: 100%;
+    justify-content: space-around;
+    gap: 0;
+    padding: 5px;
   }
 
-  .dock::-webkit-scrollbar {
+  .dock-sep {
     display: none;
+  }
+
+  .dock-btn {
+    height: 46px;
+    min-width: 46px;
+    padding: 0 8px;
+  }
+
+  .dock-volume {
+    padding-right: 0;
   }
 
   .dock-volume input[type="range"] {
     display: none;
   }
 
+  /* Menus abrem logo acima da barra, na largura da tela */
   .dock-item {
     position: static;
   }
 
   .painel {
-    position: fixed;
-    left: 12px;
-    right: 12px;
-    bottom: 84px;
+    left: 10px;
+    right: 10px;
+    bottom: 78px;
     width: auto;
+    max-height: 65%;
+    overflow-y: auto;
     transform: none;
   }
+
+  .painel-volume {
+    display: flex;
+  }
+
+  /* 16px evita o zoom automático do iPhone ao tocar num seletor */
+  .seletor {
+    padding: 11px 12px;
+    font-size: 16px;
+  }
+
+  #lista {
+    max-height: 45vh;
+  }
+
+  #lista li {
+    padding: 10px 8px;
+  }
+}
+
+@media (max-width: 400px) {
+  .dock-btn {
+    height: 44px;
+    min-width: 40px;
+    padding: 0 6px;
+  }
+}
+
+/* Telas de login em celular */
+@media (max-width: 480px) {
+  .login {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .login-card {
+    padding: 30px 20px 22px;
+    border-radius: 20px;
+  }
+
+  .login-card h1 {
+    font-size: 1.6rem;
+  }
+}
+
+@media (max-height: 520px) {
+  .login-beneficios {
+    display: none;
+  }
+
+  .login-card {
+    padding-top: 24px;
+  }
+}
+
+/* ============================================================
+   Modo compacto: celular deitado (de verdade ou pelo botão)
+   O JavaScript liga a classe "compacto" no <html>.
+   A barra de controles vai para o lado, e o vídeo ganha a altura toda.
+   ============================================================ */
+
+html.compacto .topo {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+}
+
+html.compacto .principal {
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 10px 8px;
+}
+
+html.compacto .palco {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  aspect-ratio: auto;
+  max-height: none;
+  border-radius: 14px;
+}
+
+html.compacto .palco.ativo {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 6px;
+}
+
+html.compacto .dock-area {
+  flex: none;
+  width: auto;
+  align-items: center;
+}
+
+html.compacto .dock {
+  flex-direction: column;
+  justify-content: space-around;
+  width: auto;
+  height: 100%;
+  padding: 5px;
+  border-radius: 24px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+html.compacto .dock::-webkit-scrollbar {
+  display: none;
+}
+
+html.compacto .dock-sep {
+  display: block;
+  width: 24px;
+  height: 1px;
+  margin: 2px 0;
+}
+
+html.compacto .dock-btn {
+  height: 40px;
+  min-width: 40px;
+  padding: 0 8px;
+}
+
+html.compacto .dock-item {
+  position: static;
+}
+
+html.compacto .dock-volume input[type="range"] {
+  display: none;
+}
+
+html.compacto .painel-volume {
+  display: flex;
+}
+
+html.compacto .painel {
+  left: auto;
+  right: 74px;
+  bottom: 8px;
+  width: min(320px, calc(100% - 90px));
+  max-height: calc(100% - 16px);
+  overflow-y: auto;
+  transform: none;
+}
+
+/* ============================================================
+   Tela deitada pelo botão (funciona até no iPhone):
+   gira o app inteiro em 90 graus, ocupando a tela toda.
+   ============================================================ */
+
+html.deitado,
+html.deitado body {
+  height: 100%;
+  overflow: hidden;
+}
+
+html.deitado .app {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vh;
+  height: 100vw;
+  width: 100dvh;
+  height: 100dvw;
+  transform-origin: top left;
+  transform: rotate(90deg) translateY(-100%);
+  /* as margens de segurança giram junto: topo, direita, base, esquerda */
+  padding: env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) env(safe-area-inset-top);
 }

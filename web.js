@@ -88,8 +88,20 @@ function iniciarWeb(client) {
     },
   });
 
-  app.use(sessao);
+  app.disable('x-powered-by');
 
+  // Compressão: deixa o site (principalmente o arquivo do LiveKit) bem mais leve.
+  // Só liga se o pacote "compression" estiver instalado (npm install compression).
+  try {
+    app.use(require('compression')());
+  } catch {
+    console.warn(
+      '[web] Dica: rode "npm install compression" para o site carregar mais rápido.'
+    );
+  }
+
+  // Arquivos do site vêm ANTES da sessão: não precisam de login e,
+  // assim, não gastam processamento com cookie/sessão a cada arquivo.
   // Entrega só o arquivo do cliente do LiveKit que o site precisa.
   app.get('/vendor/livekit-client.js', (req, res) => {
     res.sendFile(
@@ -99,11 +111,26 @@ function iniciarWeb(client) {
         'livekit-client',
         'dist',
         'livekit-client.umd.js'
-      )
+      ),
+      { maxAge: '1d' }
     );
   });
 
-  app.use(express.static(path.join(__dirname, 'public')));
+  app.use(
+    express.static(path.join(__dirname, 'public'), {
+      setHeaders(res, arquivo) {
+        if (/\.(png|jpe?g|webp|svg|ico|woff2?)$/i.test(arquivo)) {
+          // Imagens e fontes: ficam guardadas por 7 dias no aparelho.
+          res.setHeader('Cache-Control', 'public, max-age=604800');
+        } else {
+          // html/js/css: o navegador confere se mudou e só baixa de novo se mudou.
+          res.setHeader('Cache-Control', 'no-cache');
+        }
+      },
+    })
+  );
+
+  app.use(sessao);
 
   // ---------- Descobrir em qual call a pessoa está ----------
   // Procura a pessoa em todos os servidores onde o bot está.
