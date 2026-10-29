@@ -885,7 +885,21 @@ async function conectarLivekit() {
 
     desconectarSala();
     estado.midia = 'erro';
-    mostrarErro('Não consegui entrar na sala de transmissão.');
+
+    const motivo = String((erro && erro.message) || erro);
+    let texto = 'Não consegui entrar na sala de transmissão.';
+
+    if (motivo === 'token-503') {
+      texto = 'LiveKit não configurado no servidor (faltam variáveis).';
+    } else if (motivo === 'token-403') {
+      texto = 'Você precisa estar numa call do Discord.';
+    } else if (motivo === 'token-401') {
+      texto = 'Sessão expirada. Entre com o Discord de novo.';
+    } else {
+      texto += ' (' + motivo + ')';
+    }
+
+    mostrarErro(texto);
   }
 
   desenhar();
